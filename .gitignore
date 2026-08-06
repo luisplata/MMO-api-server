@@ -1,0 +1,23 @@
+# Build artifacts
+/bin/
+/dist/
+*.test
+*.out
+*.prof
+
+# Environment
+.env
+.env.*
+
+# Editors / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS noise
+Thumbs.db
+.DS_Store
+
+# Local scratch (never committed)
+/tmp/

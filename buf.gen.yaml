@@ -1,0 +1,7 @@
+# Codegen template for the C# bindings.
+# Go bindings are generated with protoc directly (see Makefile proto-go).
+# The remote plugin is the official protoc-gen-csharp pinned to v35.1.
+version: v2
+plugins:
+  - remote: buf.build/protocolbuffers/csharp:v35.1
+    out: proto/v1/gen/csharp
