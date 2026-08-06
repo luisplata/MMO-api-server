@@ -3,7 +3,7 @@
 // The registry maps envelope type ids (u16) to their protobuf message
 // types so a frame's payload can be encoded/decoded by dispatch. The
 // type-id table is documented in the proto/v1/world.proto header (ids
-// 1–10) and parity is enforced by TestWorldRegistryCompleteness.
+// 1–12) and parity is enforced by TestWorldRegistryCompleteness.
 package protocol
 
 import (
@@ -26,7 +26,7 @@ type Registry struct {
 }
 
 // NewWorldRegistry returns the registry matching the contract type-id
-// table of proto/v1/world.proto (design D2 order, ids 1–10).
+// table of proto/v1/world.proto (design D2 order, ids 1–12).
 func NewWorldRegistry() *Registry {
 	r := &Registry{
 		byID:   make(map[uint16]proto.Message),
@@ -42,6 +42,8 @@ func NewWorldRegistry() *Registry {
 	r.register(8, &mmov1.Snapshot{})
 	r.register(9, &mmov1.VersionMismatch{})
 	r.register(10, &mmov1.Ack{})
+	r.register(11, &mmov1.SpawnEntity{})
+	r.register(12, &mmov1.DespawnEntity{})
 	return r
 }
 

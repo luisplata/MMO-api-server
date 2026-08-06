@@ -24,6 +24,8 @@
 //	 8  Snapshot
 //	 9  VersionMismatch
 //	10  Ack
+//	11  SpawnEntity
+//	12  DespawnEntity
 //
 // New message types take new additive ids.
 //
@@ -128,4 +130,20 @@ message Snapshot {
 // idempotent and cheap).
 message Ack {
   uint32 seq = 1;
+}
+
+// SpawnEntity is sent over TCP when an entity enters a player's interest
+// set (v1 flat fanout: on join; chunk fanout: on cell enter). It carries
+// the entity id and its full authoritative state so the client can add
+// the entity without waiting for the next snapshot.
+message SpawnEntity {
+  string entityId = 1;
+  EntityState state = 2;
+}
+
+// DespawnEntity is sent over TCP when an entity leaves a player's
+// interest set (v1 flat fanout: on leave; chunk fanout: on cell leave).
+// It carries only the entity id — the client removes the entity.
+message DespawnEntity {
+  string entityId = 1;
 }

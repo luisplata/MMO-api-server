@@ -54,8 +54,8 @@ func protoTypeIDTable(t *testing.T) []typeIDRow {
 		}
 		rows = append(rows, typeIDRow{id: uint16(id), name: m[2]})
 	}
-	if len(rows) < 10 {
-		t.Fatalf("expected at least the 10 contract types in world.proto header, parsed %d", len(rows))
+	if len(rows) < 12 {
+		t.Fatalf("expected at least the 12 contract types in world.proto header, parsed %d", len(rows))
 	}
 	return rows
 }
@@ -113,6 +113,8 @@ func TestRegistryMessageRoundTripDispatch(t *testing.T) {
 		{"Snapshot", 8, &mmov1.Snapshot{Seq: 2, Entities: []*mmov1.EntityState{{Id: "p1", Pos: &mmov1.Vec2{X: 4, Z: 5}}}}},
 		{"VersionMismatch", 9, &mmov1.VersionMismatch{MinVer: 1, MaxVer: 9}},
 		{"Ack", 10, &mmov1.Ack{Seq: 42}},
+		{"SpawnEntity", 11, &mmov1.SpawnEntity{EntityId: "plr-009", State: &mmov1.EntityState{Id: "plr-009", Pos: &mmov1.Vec2{X: 1, Z: 2}, Yaw: 0.5}}},
+		{"DespawnEntity", 12, &mmov1.DespawnEntity{EntityId: "plr-009"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

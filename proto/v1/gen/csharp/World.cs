@@ -44,9 +44,12 @@ namespace Mmo.V1 {
             "UgNkaXISFAoFc3BlZWQYAyABKAJSBXNwZWVkEhAKA3lhdxgEIAEoAlIDeWF3",
             "Ik0KCFNuYXBzaG90EhAKA3NlcRgBIAEoBVIDc2VxEi8KCGVudGl0aWVzGAIg",
             "AygLMhMubW1vLnYxLkVudGl0eVN0YXRlUghlbnRpdGllcyIXCgNBY2sSEAoD",
-            "c2VxGAEgASgNUgNzZXFCR1o8Z2l0aHViLmNvbS9sdWlzcGxhdGEvbW1vLWFw",
-            "aS1zZXJ2ZXIvcHJvdG8vdjEvZ2VuL2dvL3YxO21tb3YxqgIGTW1vLlYxYgZw",
-            "cm90bzM="));
+            "c2VxGAEgASgNUgNzZXEiVAoLU3Bhd25FbnRpdHkSGgoIZW50aXR5SWQYASAB",
+            "KAlSCGVudGl0eUlkEikKBXN0YXRlGAIgASgLMhMubW1vLnYxLkVudGl0eVN0",
+            "YXRlUgVzdGF0ZSIrCg1EZXNwYXduRW50aXR5EhoKCGVudGl0eUlkGAEgASgJ",
+            "UghlbnRpdHlJZEJHWjxnaXRodWIuY29tL2x1aXNwbGF0YS9tbW8tYXBpLXNl",
+            "cnZlci9wcm90by92MS9nZW4vZ28vdjE7bW1vdjGqAgZNbW8uVjFiBnByb3Rv",
+            "Mw=="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
@@ -61,7 +64,9 @@ namespace Mmo.V1 {
             new pbr::GeneratedClrTypeInfo(typeof(global::Mmo.V1.WorldSnapshot), global::Mmo.V1.WorldSnapshot.Parser, new[]{ "Entities" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Mmo.V1.MoveInput), global::Mmo.V1.MoveInput.Parser, new[]{ "Seq", "Dir", "Speed", "Yaw" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Mmo.V1.Snapshot), global::Mmo.V1.Snapshot.Parser, new[]{ "Seq", "Entities" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::Mmo.V1.Ack), global::Mmo.V1.Ack.Parser, new[]{ "Seq" }, null, null, null, null)
+            new pbr::GeneratedClrTypeInfo(typeof(global::Mmo.V1.Ack), global::Mmo.V1.Ack.Parser, new[]{ "Seq" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::Mmo.V1.SpawnEntity), global::Mmo.V1.SpawnEntity.Parser, new[]{ "EntityId", "State" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::Mmo.V1.DespawnEntity), global::Mmo.V1.DespawnEntity.Parser, new[]{ "EntityId" }, null, null, null, null)
           }));
     }
     #endregion
@@ -3058,6 +3063,459 @@ namespace Mmo.V1 {
             break;
           case 8: {
             Seq = input.ReadUInt32();
+            break;
+          }
+        }
+      }
+    }
+    #endif
+
+  }
+
+  /// <summary>
+  /// SpawnEntity is sent over TCP when an entity enters a player's interest
+  /// set (v1 flat fanout: on join; chunk fanout: on cell enter). It carries
+  /// the entity id and its full authoritative state so the client can add
+  /// the entity without waiting for the next snapshot.
+  /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
+  public sealed partial class SpawnEntity : pb::IMessage<SpawnEntity>
+  #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      , pb::IBufferMessage
+  #endif
+  {
+    private static readonly pb::MessageParser<SpawnEntity> _parser = new pb::MessageParser<SpawnEntity>(() => new SpawnEntity());
+    private pb::UnknownFieldSet _unknownFields;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pb::MessageParser<SpawnEntity> Parser { get { return _parser; } }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pbr::MessageDescriptor Descriptor {
+      get { return global::Mmo.V1.WorldReflection.Descriptor.MessageTypes[12]; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    pbr::MessageDescriptor pb::IMessage.Descriptor {
+      get { return Descriptor; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public SpawnEntity() {
+      OnConstruction();
+    }
+
+    partial void OnConstruction();
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public SpawnEntity(SpawnEntity other) : this() {
+      entityId_ = other.entityId_;
+      state_ = other.state_ != null ? other.state_.Clone() : null;
+      _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public SpawnEntity Clone() {
+      return new SpawnEntity(this);
+    }
+
+    /// <summary>Field number for the "entityId" field.</summary>
+    public const int EntityIdFieldNumber = 1;
+    private string entityId_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string EntityId {
+      get { return entityId_; }
+      set {
+        entityId_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    /// <summary>Field number for the "state" field.</summary>
+    public const int StateFieldNumber = 2;
+    private global::Mmo.V1.EntityState state_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public global::Mmo.V1.EntityState State {
+      get { return state_; }
+      set {
+        state_ = value;
+      }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override bool Equals(object other) {
+      return Equals(other as SpawnEntity);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool Equals(SpawnEntity other) {
+      if (ReferenceEquals(other, null)) {
+        return false;
+      }
+      if (ReferenceEquals(other, this)) {
+        return true;
+      }
+      if (EntityId != other.EntityId) return false;
+      if (!object.Equals(State, other.State)) return false;
+      return Equals(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override int GetHashCode() {
+      int hash = 1;
+      if (EntityId.Length != 0) hash ^= EntityId.GetHashCode();
+      if (state_ != null) hash ^= State.GetHashCode();
+      if (_unknownFields != null) {
+        hash ^= _unknownFields.GetHashCode();
+      }
+      return hash;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override string ToString() {
+      return pb::JsonFormatter.ToDiagnosticString(this);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void WriteTo(pb::CodedOutputStream output) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      output.WriteRawMessage(this);
+    #else
+      if (EntityId.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(EntityId);
+      }
+      if (state_ != null) {
+        output.WriteRawTag(18);
+        output.WriteMessage(State);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(output);
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
+      if (EntityId.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(EntityId);
+      }
+      if (state_ != null) {
+        output.WriteRawTag(18);
+        output.WriteMessage(State);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(ref output);
+      }
+    }
+    #endif
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int CalculateSize() {
+      int size = 0;
+      if (EntityId.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(EntityId);
+      }
+      if (state_ != null) {
+        size += 1 + pb::CodedOutputStream.ComputeMessageSize(State);
+      }
+      if (_unknownFields != null) {
+        size += _unknownFields.CalculateSize();
+      }
+      return size;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(SpawnEntity other) {
+      if (other == null) {
+        return;
+      }
+      if (other.EntityId.Length != 0) {
+        EntityId = other.EntityId;
+      }
+      if (other.state_ != null) {
+        if (state_ == null) {
+          State = new global::Mmo.V1.EntityState();
+        }
+        State.MergeFrom(other.State);
+      }
+      _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(pb::CodedInputStream input) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      input.ReadRawMessage(this);
+    #else
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
+            break;
+          case 10: {
+            EntityId = input.ReadString();
+            break;
+          }
+          case 18: {
+            if (state_ == null) {
+              State = new global::Mmo.V1.EntityState();
+            }
+            input.ReadMessage(State);
+            break;
+          }
+        }
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
+            break;
+          case 10: {
+            EntityId = input.ReadString();
+            break;
+          }
+          case 18: {
+            if (state_ == null) {
+              State = new global::Mmo.V1.EntityState();
+            }
+            input.ReadMessage(State);
+            break;
+          }
+        }
+      }
+    }
+    #endif
+
+  }
+
+  /// <summary>
+  /// DespawnEntity is sent over TCP when an entity leaves a player's
+  /// interest set (v1 flat fanout: on leave; chunk fanout: on cell leave).
+  /// It carries only the entity id — the client removes the entity.
+  /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
+  public sealed partial class DespawnEntity : pb::IMessage<DespawnEntity>
+  #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      , pb::IBufferMessage
+  #endif
+  {
+    private static readonly pb::MessageParser<DespawnEntity> _parser = new pb::MessageParser<DespawnEntity>(() => new DespawnEntity());
+    private pb::UnknownFieldSet _unknownFields;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pb::MessageParser<DespawnEntity> Parser { get { return _parser; } }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pbr::MessageDescriptor Descriptor {
+      get { return global::Mmo.V1.WorldReflection.Descriptor.MessageTypes[13]; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    pbr::MessageDescriptor pb::IMessage.Descriptor {
+      get { return Descriptor; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public DespawnEntity() {
+      OnConstruction();
+    }
+
+    partial void OnConstruction();
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public DespawnEntity(DespawnEntity other) : this() {
+      entityId_ = other.entityId_;
+      _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public DespawnEntity Clone() {
+      return new DespawnEntity(this);
+    }
+
+    /// <summary>Field number for the "entityId" field.</summary>
+    public const int EntityIdFieldNumber = 1;
+    private string entityId_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string EntityId {
+      get { return entityId_; }
+      set {
+        entityId_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override bool Equals(object other) {
+      return Equals(other as DespawnEntity);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool Equals(DespawnEntity other) {
+      if (ReferenceEquals(other, null)) {
+        return false;
+      }
+      if (ReferenceEquals(other, this)) {
+        return true;
+      }
+      if (EntityId != other.EntityId) return false;
+      return Equals(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override int GetHashCode() {
+      int hash = 1;
+      if (EntityId.Length != 0) hash ^= EntityId.GetHashCode();
+      if (_unknownFields != null) {
+        hash ^= _unknownFields.GetHashCode();
+      }
+      return hash;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override string ToString() {
+      return pb::JsonFormatter.ToDiagnosticString(this);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void WriteTo(pb::CodedOutputStream output) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      output.WriteRawMessage(this);
+    #else
+      if (EntityId.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(EntityId);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(output);
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
+      if (EntityId.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(EntityId);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(ref output);
+      }
+    }
+    #endif
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int CalculateSize() {
+      int size = 0;
+      if (EntityId.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(EntityId);
+      }
+      if (_unknownFields != null) {
+        size += _unknownFields.CalculateSize();
+      }
+      return size;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(DespawnEntity other) {
+      if (other == null) {
+        return;
+      }
+      if (other.EntityId.Length != 0) {
+        EntityId = other.EntityId;
+      }
+      _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(pb::CodedInputStream input) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      input.ReadRawMessage(this);
+    #else
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
+            break;
+          case 10: {
+            EntityId = input.ReadString();
+            break;
+          }
+        }
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
+            break;
+          case 10: {
+            EntityId = input.ReadString();
             break;
           }
         }

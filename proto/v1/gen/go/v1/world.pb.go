@@ -24,6 +24,8 @@
 //	 8  Snapshot
 //	 9  VersionMismatch
 //	10  Ack
+//	11  SpawnEntity
+//	12  DespawnEntity
 //
 // New message types take new additive ids.
 //
@@ -733,6 +735,109 @@ func (x *Ack) GetSeq() uint32 {
 	return 0
 }
 
+// SpawnEntity is sent over TCP when an entity enters a player's interest
+// set (v1 flat fanout: on join; chunk fanout: on cell enter). It carries
+// the entity id and its full authoritative state so the client can add
+// the entity without waiting for the next snapshot.
+type SpawnEntity struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EntityId      string                 `protobuf:"bytes,1,opt,name=entityId,proto3" json:"entityId,omitempty"`
+	State         *EntityState           `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SpawnEntity) Reset() {
+	*x = SpawnEntity{}
+	mi := &file_v1_world_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SpawnEntity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SpawnEntity) ProtoMessage() {}
+
+func (x *SpawnEntity) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_world_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SpawnEntity.ProtoReflect.Descriptor instead.
+func (*SpawnEntity) Descriptor() ([]byte, []int) {
+	return file_v1_world_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *SpawnEntity) GetEntityId() string {
+	if x != nil {
+		return x.EntityId
+	}
+	return ""
+}
+
+func (x *SpawnEntity) GetState() *EntityState {
+	if x != nil {
+		return x.State
+	}
+	return nil
+}
+
+// DespawnEntity is sent over TCP when an entity leaves a player's
+// interest set (v1 flat fanout: on leave; chunk fanout: on cell leave).
+// It carries only the entity id — the client removes the entity.
+type DespawnEntity struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EntityId      string                 `protobuf:"bytes,1,opt,name=entityId,proto3" json:"entityId,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DespawnEntity) Reset() {
+	*x = DespawnEntity{}
+	mi := &file_v1_world_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DespawnEntity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DespawnEntity) ProtoMessage() {}
+
+func (x *DespawnEntity) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_world_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DespawnEntity.ProtoReflect.Descriptor instead.
+func (*DespawnEntity) Descriptor() ([]byte, []int) {
+	return file_v1_world_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *DespawnEntity) GetEntityId() string {
+	if x != nil {
+		return x.EntityId
+	}
+	return ""
+}
+
 var File_v1_world_proto protoreflect.FileDescriptor
 
 const file_v1_world_proto_rawDesc = "" +
@@ -780,7 +885,12 @@ const file_v1_world_proto_rawDesc = "" +
 	"\x03seq\x18\x01 \x01(\x05R\x03seq\x12/\n" +
 	"\bentities\x18\x02 \x03(\v2\x13.mmo.v1.EntityStateR\bentities\"\x17\n" +
 	"\x03Ack\x12\x10\n" +
-	"\x03seq\x18\x01 \x01(\rR\x03seqBGZ<github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1;mmov1\xaa\x02\x06Mmo.V1b\x06proto3"
+	"\x03seq\x18\x01 \x01(\rR\x03seq\"T\n" +
+	"\vSpawnEntity\x12\x1a\n" +
+	"\bentityId\x18\x01 \x01(\tR\bentityId\x12)\n" +
+	"\x05state\x18\x02 \x01(\v2\x13.mmo.v1.EntityStateR\x05state\"+\n" +
+	"\rDespawnEntity\x12\x1a\n" +
+	"\bentityId\x18\x01 \x01(\tR\bentityIdBGZ<github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1;mmov1\xaa\x02\x06Mmo.V1b\x06proto3"
 
 var (
 	file_v1_world_proto_rawDescOnce sync.Once
@@ -794,7 +904,7 @@ func file_v1_world_proto_rawDescGZIP() []byte {
 	return file_v1_world_proto_rawDescData
 }
 
-var file_v1_world_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_v1_world_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_v1_world_proto_goTypes = []any{
 	(*Vec2)(nil),            // 0: mmo.v1.Vec2
 	(*EntityState)(nil),     // 1: mmo.v1.EntityState
@@ -808,6 +918,8 @@ var file_v1_world_proto_goTypes = []any{
 	(*MoveInput)(nil),       // 9: mmo.v1.MoveInput
 	(*Snapshot)(nil),        // 10: mmo.v1.Snapshot
 	(*Ack)(nil),             // 11: mmo.v1.Ack
+	(*SpawnEntity)(nil),     // 12: mmo.v1.SpawnEntity
+	(*DespawnEntity)(nil),   // 13: mmo.v1.DespawnEntity
 }
 var file_v1_world_proto_depIdxs = []int32{
 	0, // 0: mmo.v1.EntityState.pos:type_name -> mmo.v1.Vec2
@@ -816,11 +928,12 @@ var file_v1_world_proto_depIdxs = []int32{
 	1, // 3: mmo.v1.WorldSnapshot.entities:type_name -> mmo.v1.EntityState
 	0, // 4: mmo.v1.MoveInput.dir:type_name -> mmo.v1.Vec2
 	1, // 5: mmo.v1.Snapshot.entities:type_name -> mmo.v1.EntityState
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	1, // 6: mmo.v1.SpawnEntity.state:type_name -> mmo.v1.EntityState
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_v1_world_proto_init() }
@@ -834,7 +947,7 @@ func file_v1_world_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_v1_world_proto_rawDesc), len(file_v1_world_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

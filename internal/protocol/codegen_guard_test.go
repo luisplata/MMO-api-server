@@ -43,7 +43,7 @@ func TestGeneratedGoCompilesAndIsLegacyFree(t *testing.T) {
 // committed C# bindings must exist for every contract message and must
 // not reference the reflection-heavy IL2CPP paths (DynamicMessage,
 // JsonParser, google.protobuf.Any). protoc-gen-csharp emits one .cs per
-// proto file, so World.cs must declare all 12 contract messages.
+// proto file, so World.cs must declare all 14 contract messages.
 func TestGeneratedCSharpExistsAndIsReflectionFree(t *testing.T) {
 	root := repoRoot(t)
 	dir := filepath.Join(root, "proto", "v1", "gen", "csharp")
@@ -56,7 +56,7 @@ func TestGeneratedCSharpExistsAndIsReflectionFree(t *testing.T) {
 	required := []string{
 		"Vec2", "EntityState", "Hello", "ServerInfo", "VersionMismatch",
 		"AuthRequest", "AuthResponse", "EnterWorld", "WorldSnapshot",
-		"MoveInput", "Snapshot", "Ack",
+		"MoveInput", "Snapshot", "Ack", "SpawnEntity", "DespawnEntity",
 	}
 	present := map[string]bool{}
 	for _, e := range entries {

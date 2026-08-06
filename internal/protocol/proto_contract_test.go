@@ -198,6 +198,40 @@ func TestMessageRoundTrip(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "SpawnEntity",
+			msg: &mmov1.SpawnEntity{
+				EntityId: "plr-001",
+				State: &mmov1.EntityState{
+					Id:       "plr-001",
+					Pos:      &mmov1.Vec2{X: 12.5, Z: -8.25},
+					Velocity: &mmov1.Vec2{X: 1.5, Z: 0},
+					Yaw:      0.7853982,
+				},
+			},
+			verify: func(t *testing.T, got proto.Message) {
+				s := got.(*mmov1.SpawnEntity)
+				if s.EntityId != "plr-001" {
+					t.Errorf("SpawnEntity.entityId = %q, want plr-001", s.EntityId)
+				}
+				if s.State == nil {
+					t.Fatalf("SpawnEntity.state is nil")
+				}
+				if s.State.Id != "plr-001" || s.State.Pos.X != 12.5 || s.State.Pos.Z != -8.25 ||
+					s.State.Velocity.X != 1.5 || s.State.Velocity.Z != 0 || s.State.Yaw != 0.7853982 {
+					t.Errorf("SpawnEntity.state round-trip mismatch: %+v", s.State)
+				}
+			},
+		},
+		{
+			name: "DespawnEntity",
+			msg:  &mmov1.DespawnEntity{EntityId: "plr-002"},
+			verify: func(t *testing.T, got proto.Message) {
+				if g := got.(*mmov1.DespawnEntity).EntityId; g != "plr-002" {
+					t.Errorf("DespawnEntity.entityId = %q, want plr-002", g)
+				}
+			},
+		},
 	}
 
 	for _, tc := range cases {
