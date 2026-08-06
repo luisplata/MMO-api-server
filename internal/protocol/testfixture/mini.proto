@@ -1,0 +1,17 @@
+// Test fixture for the additive-minor-bump versioning property test
+// (spec R5 S5.3). MiniServerInfo mirrors an OLD client schema that only
+// knows field 1 of ServerInfo. Fields 2 and 3 of ServerInfo must
+// survive a round-trip through this old schema as unknown fields.
+//
+// This fixture is test-only: it is NOT part of the wire contract and is
+// never sent or received by the server.
+syntax = "proto3";
+
+package mmo.v1.testfixture;
+
+option go_package = "github.com/luisplata/mmo-api-server/internal/protocol/testfixture;testfixture";
+option csharp_namespace = "Mmo.V1.TestFixture";
+
+message MiniServerInfo {
+  int32 protoVer = 1;
+}

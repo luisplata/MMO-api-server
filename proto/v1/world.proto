@@ -1,0 +1,131 @@
+// World Simulation Protocol — v1 contract.
+//
+// Single source of truth for the wire protocol shared between the
+// mmo-api-server (Go) and the Unity client (C#). Generated Go bindings
+// live in proto/v1/gen/go and generated C# bindings in
+// proto/v1/gen/csharp — BOTH are committed, so the Unity dev never
+// needs protoc. Do not hand-edit generated files.
+//
+// Versioning policy (spec R5): additive only. A minor bump MAY add new
+// fields or new message types. A bump MUST NOT remove or reuse a field
+// number — mark removed fields with `reserved`. The wire format is
+// protobuf proto3; gob and hand-rolled binary are forbidden.
+//
+// Type-id registry (design D2) — the 10-byte envelope carries the type
+// id; internal/protocol must map 1:1 (parity is enforced by test):
+//
+//	 1  Hello
+//	 2  ServerInfo
+//	 3  AuthRequest
+//	 4  AuthResponse
+//	 5  EnterWorld
+//	 6  WorldSnapshot
+//	 7  MoveInput
+//	 8  Snapshot
+//	 9  VersionMismatch
+//	10  Ack
+//
+// New message types take new additive ids.
+//
+// Entity shape (design D3): position and velocity are Vec2 on the 2.5D
+// ground plane (x, z) plus a single yaw angle. Pitch/roll are
+// structurally impossible — the camera is client-local and never
+// networked.
+syntax = "proto3";
+
+package mmo.v1;
+
+option go_package = "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1;mmov1";
+option csharp_namespace = "Mmo.V1";
+
+// Vec2 is a 2D vector on the ground plane. The world is 2.5D: the Y
+// axis belongs to the client camera, so it is never networked.
+message Vec2 {
+  float x = 1;
+  float z = 2;
+}
+
+// EntityState is the server-authoritative state of one entity. yaw is
+// in radians (v1 sends raw radians; future delta-encoding must handle
+// wrap-around at 0/2π). No pitch/roll fields exist by design.
+message EntityState {
+  string id = 1;
+  Vec2 pos = 2;
+  Vec2 velocity = 3;
+  float yaw = 4;
+}
+
+// Hello opens a TCP session and announces the client's protocol major
+// version for negotiation.
+message Hello {
+  int32 protoVer = 1;
+}
+
+// ServerInfo answers Hello with the negotiated parameters: the
+// server's protocol version, the simulation tick rate, and the server
+// clock (ms since epoch) for client time-sync.
+message ServerInfo {
+  int32 protoVer = 1;
+  int32 tickRate = 2;
+  int64 serverTime = 3;
+}
+
+// VersionMismatch is sent when the client version is outside the
+// server's supported range; the server then closes the connection.
+message VersionMismatch {
+  int32 minVer = 1;
+  int32 maxVer = 2;
+}
+
+// AuthRequest carries the client's credentials.
+message AuthRequest {
+  string username = 1;
+  string password = 2;
+}
+
+// AuthResponse answers AuthRequest. On success ok=true and the server
+// provides the player id, spawn position, and a fresh UDP bind token
+// carried by the first UDP packet. On failure ok=false with an error
+// message and the session is closed.
+message AuthResponse {
+  bool ok = 1;
+  string playerId = 2;
+  Vec2 spawnPos = 3;
+  bytes udpToken = 4;
+  string errorMessage = 5;
+}
+
+// EnterWorld acknowledges readiness for the initial world state.
+message EnterWorld {}
+
+// WorldSnapshot is the full initial state sent in reply to EnterWorld.
+message WorldSnapshot {
+  repeated EntityState entities = 1;
+}
+
+// MoveInput is client->server over UDP. seq is the client's own
+// sequence number; the server tags processing to the simulation tick.
+// dir/speed/yaw are intent — the server validates speed and integrates
+// authoritatively (no collision in v1).
+message MoveInput {
+  int32 seq = 1;
+  Vec2 dir = 2;
+  float speed = 3;
+  float yaw = 4;
+}
+
+// Snapshot is the server->client broadcast container (10 Hz over UDP).
+// seq is the server's monotonic snapshot sequence; clients drop any
+// snapshot with seq <= the last applied. This container is designed so
+// future chunks, delta compression and client prediction never change
+// this message — only server internals evolve.
+message Snapshot {
+  int32 seq = 1;
+  repeated EntityState entities = 2;
+}
+
+// Ack acknowledges a received seq (v1: no retransmission — inputs are
+// idempotent and cheap).
+message Ack {
+  uint32 seq = 1;
+}
