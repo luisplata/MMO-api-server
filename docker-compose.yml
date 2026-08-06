@@ -1,0 +1,49 @@
+# MMO API Server — docker-compose.
+#
+# REPLICATION NOTE (v1):
+#   World state is IN-MEMORY inside one process — every replica is an
+#   INDEPENDENT world. There is no shared/sharded state yet; true
+#   coordinated multi-replica state is future work.
+#   `docker compose up --scale mmo-server=N` is for TESTING THE PROTOCOL
+#   against N independent servers, NOT for a shared world. For N > 1 you
+#   must drop the fixed host ports below (the 2nd replica would fail to
+#   bind host port 8000); use `ports: ["8000"]` for ephemeral host ports
+#   or omit the ports section entirely.
+#
+# CONFIG NOTE:
+#   cmd/server reads configuration from CLI FLAGS ONLY (no env vars), so
+#   the flags are set explicitly in `command:` below. `-dev-auth true` =
+#   v1 dev mode: any credentials are accepted and the username becomes
+#   the player id (real auth is future work).
+
+name: mmo-server
+
+services:
+  mmo-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"      # TCP — lifecycle: handshake, auth, spawn/despawn, reliable commands
+      - "8001:8001/udp"  # UDP — MoveInput (client→server) + Snapshot (server→client)
+    restart: unless-stopped
+    command:
+      - -tcp
+      - :8000
+      - -udp
+      - :8001
+      - -dev-auth
+      - "true"
+    healthcheck:
+      # Bare TCP connect probe on the reliable channel (busybox nc in the
+      # alpine runtime; `-z` = connect with zero I/O). The probe closes
+      # immediately, so no session is left behind — the per-conn goroutine
+      # exits on EOF. HandshakeTimeout (10 s, hardcoded in
+      # cmd/server/main.go — NOT a flag) only matters for connections that
+      # actually send frames. If a future base image lacks the nc applet,
+      # swap to: ["CMD", "wget", "-q", "-O", "/dev/null", "tcp://127.0.0.1:8000"]
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8000"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s

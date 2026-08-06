@@ -1,0 +1,29 @@
+# Keep the build context lean — only what `go build ./cmd/server` needs.
+
+# VCS
+.git
+.gitignore
+
+# SDD / agent tooling (kept in the repo, not needed to build the binary)
+.atl
+.agents
+skills-lock.json
+Makefile
+buf.gen.yaml
+
+# Local scratch & env (never copied into an image)
+.env
+.env.*
+*.local
+tmp/
+
+# Test artifacts / test data (not needed for the build)
+testdata/
+*.test
+*.out
+*.prof
+
+# The Docker files themselves are optional in the context
+Dockerfile
+docker-compose.yml
+.dockerignore
