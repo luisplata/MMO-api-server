@@ -1,9 +1,12 @@
 // Package protocol defines the wire-level protocol contract for the
-// world simulation: the protobuf messages generated from proto/v1 and
-// (from PR2 onward) the 10-byte envelope header and the type-id registry.
+// world simulation: the protobuf messages generated from proto/v1, the
+// 11-byte envelope header (design D1) and the type-id registry (design
+// D2).
 //
-// PR1 scope: the committed protobuf bindings (proto/v1/gen/go) plus the
-// tests that pin the contract — round-trip identity, unknown-field
-// preservation across an additive minor bump, and the reflection-free /
-// no-legacy-format guards.
+// The committed protobuf bindings (proto/v1/gen/go) are the source of
+// truth for message shapes. The envelope codec adds the fixed header
+// [magic u16=0x4D4D][ver u16][type u16][flags u8][seq u32] (big-endian)
+// and the registry dispatches the envelope type id to the matching
+// protobuf message, with parity against the type-id table documented in
+// proto/v1/world.proto enforced by test.
 package protocol
