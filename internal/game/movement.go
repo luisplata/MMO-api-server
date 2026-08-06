@@ -86,9 +86,15 @@ func SetVelocityFromInput(e *Entity, in *mmov1.MoveInput, max float32) bool {
 	if in.Dir != nil {
 		dir = Vec2{X: in.Dir.X, Z: in.Dir.Z}
 	}
-	vel, clamped := VelocityFromInput(dir, in.Speed, max)
+	return applyMove(e, dir, in.Speed, in.Yaw, max)
+}
+
+// applyMove is the allocation-free core of SetVelocityFromInput, used
+// by the tick loop's input drain.
+func applyMove(e *Entity, dir Vec2, speed, yaw, max float32) bool {
+	vel, clamped := VelocityFromInput(dir, speed, max)
 	e.Velocity = vel
-	e.Yaw = in.Yaw
+	e.Yaw = yaw
 	return clamped
 }
 

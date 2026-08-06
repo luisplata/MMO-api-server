@@ -53,6 +53,18 @@ type SnapshotAssembler interface {
 	Assemble(seq uint32, entities []*Entity) *mmov1.Snapshot
 }
 
+// entityState maps one entity to its wire state (design D3, spec S16.1):
+// ground-plane position, velocity, and yaw — nothing else. Shared by the
+// snapshot assembler and the enter-world WorldSnapshot.
+func entityState(e *Entity) *mmov1.EntityState {
+	return &mmov1.EntityState{
+		Id:       e.ID,
+		Pos:      &mmov1.Vec2{X: e.Pos.X, Z: e.Pos.Z},
+		Velocity: &mmov1.Vec2{X: e.Velocity.X, Z: e.Velocity.Z},
+		Yaw:      e.Yaw,
+	}
+}
+
 // FullStateAssembler is the v1 snapshot assembler: the full entity set
 // in stable order, with position (x, z), velocity and yaw — and nothing
 // else (design D3, spec S16.1).
@@ -63,12 +75,7 @@ type FullStateAssembler struct{}
 func (FullStateAssembler) Assemble(seq uint32, entities []*Entity) *mmov1.Snapshot {
 	snap := &mmov1.Snapshot{Seq: int32(seq), Entities: make([]*mmov1.EntityState, 0, len(entities))}
 	for _, e := range entities {
-		snap.Entities = append(snap.Entities, &mmov1.EntityState{
-			Id:       e.ID,
-			Pos:      &mmov1.Vec2{X: e.Pos.X, Z: e.Pos.Z},
-			Velocity: &mmov1.Vec2{X: e.Velocity.X, Z: e.Velocity.Z},
-			Yaw:      e.Yaw,
-		})
+		snap.Entities = append(snap.Entities, entityState(e))
 	}
 	return snap
 }
