@@ -110,6 +110,13 @@ type Session struct {
 	udpBound bool
 	udpPeer  net.Addr
 
+	// playerID / spawnPos are the authenticated identity (spec R12),
+	// populated by a successful AuthRequest. The wiring layer (PR4b)
+	// reads them to register the player in the simulation and to send
+	// the enter-world WorldSnapshot from the spawn position.
+	playerID string
+	spawnPos *mmov1.Vec2
+
 	// handshakeDeadline is now()+HandshakeTimeout at construction (or
 	// zero when timeouts are disabled).
 	handshakeDeadline time.Time
@@ -169,6 +176,21 @@ func (s *Session) UDPToken() []byte { return s.udpToken }
 
 // UDPBound reports whether a UDP peer has been bound (spec R13).
 func (s *Session) UDPBound() bool { return s.udpBound }
+
+// WireVersion returns the negotiated protocol version for encoding
+// outbound frames. Before negotiation (no Hello yet) it reports the
+// server's max supported version — the same fallback the handshake
+// uses for VersionMismatch frames.
+func (s *Session) WireVersion() uint16 { return s.wireVersion() }
+
+// PlayerID returns the authenticated player id, or "" before a
+// successful AuthRequest (spec R12).
+func (s *Session) PlayerID() string { return s.playerID }
+
+// SpawnPos returns the authenticated player's spawn position, or nil
+// before a successful AuthRequest. The wiring layer registers the
+// player at this position in the simulation (design D3).
+func (s *Session) SpawnPos() *mmov1.Vec2 { return s.spawnPos }
 
 // HandleTCP processes one inbound TCP frame and drives the state
 // machine. On a protocol violation (undecodable frame, out-of-order
@@ -269,6 +291,8 @@ func (s *Session) handleAuth(req *mmov1.AuthRequest) error {
 		return err
 	}
 	s.udpToken = s.cfg.TokenGen()
+	s.playerID = playerID
+	s.spawnPos = spawn
 	return s.sendTCP(&mmov1.AuthResponse{
 		Ok:       true,
 		PlayerId: playerID,
