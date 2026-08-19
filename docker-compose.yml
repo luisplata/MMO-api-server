@@ -16,8 +16,6 @@
 #   v1 dev mode: any credentials are accepted and the username becomes
 #   the player id (real auth is future work).
 
-name: mmo-server
-
 services:
   mmo-server:
     build:
