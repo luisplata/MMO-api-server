@@ -18,6 +18,7 @@ package e2e
 
 import (
 	"context"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -33,6 +34,7 @@ import (
 	"github.com/luisplata/mmo-api-server/internal/network"
 	"github.com/luisplata/mmo-api-server/internal/protocol"
 	"github.com/luisplata/mmo-api-server/internal/server"
+	"github.com/luisplata/mmo-api-server/internal/world"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
@@ -71,10 +73,29 @@ var realtimeTypes = map[string]bool{
 	"Snapshot":  true,
 }
 
+// fixtureHeightfield loads the committed hills fixture through the
+// canonical file loader — the same path cmd/server's -map flag takes —
+// so the hill gate proves the file-based boot end-to-end (task 2.6/2.9).
+func fixtureHeightfield(t *testing.T) *world.Heightfield {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatalf("runtime.Caller failed")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	h, err := world.LoadHeightmap(filepath.Join(root, "internal", "world", "testdata", "hills.heightmap"))
+	if err != nil {
+		t.Fatalf("load hills fixture: %v", err)
+	}
+	return h
+}
+
 // startServer launches an in-process server via the exported
 // internal/server API on OS-assigned loopback ports. It returns the TCP
 // and UDP addresses clients dial, plus a shutdown func that cancels the
-// run context and waits for the graceful teardown (Run returns).
+// run context and waits for the graceful teardown (Run returns). The
+// server boots on the committed hills fixture (the -map load path), so
+// the derived-Y hill gate is active in every test here.
 func startServer(t *testing.T) (tcpAddr, udpAddr string, shutdown func()) {
 	t.Helper()
 	for attempt := 0; ; attempt++ {
@@ -85,6 +106,7 @@ func startServer(t *testing.T) (tcpAddr, udpAddr string, shutdown func()) {
 			DevAuth:  true,
 			SpawnX:   testSpawnX, SpawnZ: testSpawnZ,
 			MinProtoVer: protoVersion, MaxProtoVer: protoVersion,
+			Heights: fixtureHeightfield(t),
 		})
 		if err != nil {
 			t.Fatalf("server.New: %v", err)
@@ -465,6 +487,11 @@ func (c *client) enterWorld(t *testing.T, username string) (*mmov1.AuthResponse,
 	if ar.SpawnPos == nil || ar.SpawnPos.X != testSpawnX || ar.SpawnPos.Z != testSpawnZ {
 		t.Errorf("%s: AuthResponse.SpawnPos = %v, want (%v, %v)", c.name, ar.SpawnPos, testSpawnX, testSpawnZ)
 	}
+	// Hill gate (task 2.8, CTH-3): spawnPos.y carries the terrain height
+	// at the spawn point — the fixture peaks at 25 there.
+	if ar.SpawnPos == nil || ar.SpawnPos.Y != 25 {
+		t.Errorf("%s: AuthResponse.SpawnPos.Y = %v, want 25 (hill peak at spawn)", c.name, ar.SpawnPos)
+	}
 
 	c.sendTCP(t, &mmov1.EnterWorld{})
 	// The session-layer ack WorldSnapshot is empty (the session has no
@@ -547,10 +574,13 @@ func TestTwoPlayersSeeEachOtherMoveEndToEnd(t *testing.T) {
 	if alice0.Pos == nil || alice0.Pos.X != arA.SpawnPos.X || alice0.Pos.Z != arA.SpawnPos.Z {
 		t.Errorf("bob: alice before moving = pos %v, want spawn (%v, %v)", alice0.Pos, arA.SpawnPos.X, arA.SpawnPos.Z)
 	}
+	if alice0.Pos == nil || alice0.Pos.Y != arA.SpawnPos.Y {
+		t.Errorf("bob: alice before moving = y %v, want spawn y %v (terrain-derived)", alice0.Pos, arA.SpawnPos.Y)
+	}
 	if alice0.Yaw != 0 {
 		t.Errorf("bob: alice yaw before moving = %v, want 0", alice0.Yaw)
 	}
-	t.Logf("bob: baseline snapshot seq=%d shows alice at (%v, %v) yaw %v", first.Seq, alice0.Pos.X, alice0.Pos.Z, alice0.Yaw)
+	t.Logf("bob: baseline snapshot seq=%d shows alice at (%v, %v, %v) yaw %v", first.Seq, alice0.Pos.X, alice0.Pos.Y, alice0.Pos.Z, alice0.Yaw)
 
 	// A moves: +X at 5 u/s with yaw 1.5 rad — one MoveInput over UDP
 	// (spec R15). The sim applies it at the next 20 Hz tick and the
@@ -573,8 +603,16 @@ func TestTwoPlayersSeeEachOtherMoveEndToEnd(t *testing.T) {
 	if moved.Seq <= first.Seq {
 		t.Errorf("bob: snapshot seq not monotonic: first=%d moved=%d", first.Seq, moved.Seq)
 	}
-	t.Logf("GATE PASSED: bob saw alice at (%.2f, %.2f) yaw %.2f rad (snapshot seq %d), spawn was (%v, %v)",
-		alice1.Pos.X, alice1.Pos.Z, alice1.Yaw, moved.Seq, arA.SpawnPos.X, arA.SpawnPos.Z)
+	// THE HILL GATE (task 2.8, CTH-7): B sees A's Y equal to the terrain
+	// height at A's broadcast position — derived server-side from the
+	// fixture, never client-supplied.
+	heights := fixtureHeightfield(t)
+	wantY := heights.HeightAt(alice1.Pos.X, alice1.Pos.Z)
+	if math.Abs(float64(alice1.Pos.Y-wantY)) > 1e-3 {
+		t.Errorf("bob: alice Y = %v, want terrain %v at (%v, %v) [hill gate]", alice1.Pos.Y, wantY, alice1.Pos.X, alice1.Pos.Z)
+	}
+	t.Logf("GATE PASSED: bob saw alice at (%.2f, %.2f, %.2f) yaw %.2f rad (snapshot seq %d), spawn was (%v, %v, %v)",
+		alice1.Pos.X, alice1.Pos.Y, alice1.Pos.Z, alice1.Yaw, moved.Seq, arA.SpawnPos.X, arA.SpawnPos.Y, arA.SpawnPos.Z)
 }
 
 // TestChannelSeparationAndNoKCPWrapper pins spec R9 (S9.1/S9.2): the TCP
