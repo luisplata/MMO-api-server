@@ -10,6 +10,7 @@ import (
 	"errors"
 
 	"github.com/luisplata/mmo-api-server/internal/game"
+	"github.com/luisplata/mmo-api-server/internal/world"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
@@ -17,12 +18,14 @@ import (
 type devAuthenticator struct {
 	enabled bool
 	spawn   game.Vec2
+	// heights supplies the terrain sampler for the spawn Y (design D4,
+	// spec CTH-3); nil keeps the flat Y=0 default.
+	heights world.HeightResolver
 }
 
 // Authenticate implements session.Authenticator. The returned spawn is
-// a v2 Vec3; the Y component is the terrain height at the spawn point,
-// resolved from the active map (Slice B wiring) — before that lands it
-// is 0.
+// a v2 Vec3 whose Y is the terrain height at the spawn point, resolved
+// from the active map (spec CTH-3); with no resolver wired it is 0.
 func (d devAuthenticator) Authenticate(username, password string) (string, *mmov1.Vec3, error) {
 	if !d.enabled {
 		return "", nil, errors.New("server: authentication disabled (real auth pending)")
@@ -30,5 +33,14 @@ func (d devAuthenticator) Authenticate(username, password string) (string, *mmov
 	if username == "" {
 		return "", nil, errors.New("server: empty username")
 	}
-	return username, &mmov1.Vec3{X: d.spawn.X, Y: 0, Z: d.spawn.Z}, nil
+	return username, &mmov1.Vec3{X: d.spawn.X, Y: d.spawnHeight(), Z: d.spawn.Z}, nil
+}
+
+// spawnHeight resolves the terrain height at the configured spawn point,
+// or 0 when no resolver is wired (flat default).
+func (d devAuthenticator) spawnHeight() float32 {
+	if d.heights == nil {
+		return 0
+	}
+	return d.heights.HeightAt(d.spawn.X, d.spawn.Z)
 }

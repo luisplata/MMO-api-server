@@ -20,9 +20,9 @@ func vecFromProto(v *mmov1.Vec2) game.Vec2 {
 }
 
 // spawnFromProto converts a v2 Vec3 spawn position to the sim's
-// ground-plane Vec2. The Y component is deliberately dropped in Slice A:
-// the sim does not carry a height yet (Slice B wires HeightResolver and
-// Entity.Y, and spawn Y resolution is its own task).
+// ground-plane Vec2. The Y component is deliberately dropped: the sim
+// resolves the spawn height authoritatively from the terrain (design
+// D4, spec CTH-3), so a supplied Y can never reach the sim unverified.
 func spawnFromProto(v *mmov1.Vec3) game.Vec2 {
 	if v == nil {
 		return game.Vec2{}
@@ -43,12 +43,12 @@ func isBindToken(payload, token []byte) bool {
 // entityStateFromGame maps the sim's internal entity to its wire state —
 // a mirror of internal/game's unexported entityState, needed here for
 // the interest fanout's SpawnEntity.State. Ground-plane position as a
-// v2 Vec3 (Y = derived terrain height, 0 in Slice A), velocity and yaw
-// only (design D3, spec S16.1).
+// v2 Vec3 whose Y is the derived terrain height (spec CTH-1/CTH-5),
+// velocity and yaw only (design D3, spec S16.1).
 func entityStateFromGame(e *game.Entity) *mmov1.EntityState {
 	return &mmov1.EntityState{
 		Id:       e.ID,
-		Pos:      &mmov1.Vec3{X: e.Pos.X, Y: 0, Z: e.Pos.Z},
+		Pos:      &mmov1.Vec3{X: e.Pos.X, Y: e.Y, Z: e.Pos.Z},
 		Velocity: &mmov1.Vec2{X: e.Velocity.X, Z: e.Velocity.Z},
 		Yaw:      e.Yaw,
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/luisplata/mmo-api-server/internal/network"
 	"github.com/luisplata/mmo-api-server/internal/protocol"
 	"github.com/luisplata/mmo-api-server/internal/session"
+	"github.com/luisplata/mmo-api-server/internal/world"
 )
 
 // Config carries the server tunables (design PR4b).
@@ -45,6 +46,10 @@ type Config struct {
 	// negotiated at the handshake (spec R5).
 	MinProtoVer int32
 	MaxProtoVer int32
+	// Heights supplies the terrain sampler for the derived Y — used by
+	// both the simulation (tick) and dev auth (spawn Y) (design D4, spec
+	// CTH-2/CTH-3); nil selects the flat default (Y = 0).
+	Heights world.HeightResolver
 	// HandshakeTimeout bounds the Hello→EnterWorld sequence; zero
 	// disables it.
 	HandshakeTimeout time.Duration
@@ -102,11 +107,11 @@ func New(cfg Config) (*Server, error) {
 	srv := &Server{
 		cfg:     cfg,
 		reg:     protocol.NewWorldRegistry(),
-		auth:    devAuthenticator{enabled: cfg.DevAuth, spawn: game.Vec2{X: cfg.SpawnX, Z: cfg.SpawnZ}},
+		auth:    devAuthenticator{enabled: cfg.DevAuth, spawn: game.Vec2{X: cfg.SpawnX, Z: cfg.SpawnZ}, heights: cfg.Heights},
 		players: make(map[string]*player),
 		simOps:  make(chan simOp),
 	}
-	sim, err := game.NewSimulation(game.SimulationConfig{Sink: srv})
+	sim, err := game.NewSimulation(game.SimulationConfig{Sink: srv, Heights: cfg.Heights})
 	if err != nil {
 		return nil, err
 	}
