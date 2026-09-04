@@ -1,0 +1,13 @@
+{
+  "file": "hills.heightmap",
+  "sha256": "32f621978f1d6d3acf60f4c4d19609b782af9e63ad6c9056c619b39660a9fba8",
+  "version": 1,
+  "width": 32,
+  "height": 32,
+  "cell_size": 10,
+  "origin_x": 0,
+  "origin_z": 0,
+  "y_scale": 1,
+  "min_height": 0,
+  "max_height": 25
+}
