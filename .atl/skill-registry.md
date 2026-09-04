@@ -97,6 +97,44 @@ Pre-digested rules per skill. Delegators copy matching blocks into sub-agent pro
 - Conventional commits; use `git diff --stat` and `git log --oneline -5` to review the story before committing
 - If SDD forecasts >400 lines, group commits into chained PR slices BEFORE implementation
 
+## Project Skills
+
+Project-level skills take precedence over user-level skills with the same name.
+
+| Trigger | Skill | Path |
+|---------|-------|------|
+| Use when writing or reviewing Go code, asking about style or clarity, or establishing project coding standards | golang-code-style | D:\Web\MMO-api-server\.agents\skills\golang-code-style\SKILL.md |
+| Apply when explicitly choosing between architectural patterns, implementing functional options, designing constructor APIs, setting up graceful shutdown, applying resilience patterns, or asking which idiomatic Go pattern fits a specific problem | golang-design-patterns | D:\Web\MMO-api-server\.agents\skills\golang-design-patterns\SKILL.md |
+| Use when profiling or benchmarks have identified a bottleneck and you need the right optimization pattern to fix it, or when performing performance code review | golang-performance | D:\Web\MMO-api-server\.agents\skills\golang-performance\SKILL.md |
+| Use when writing or reviewing Go tests, choosing a testing approach, setting up Go test CI, or debugging flaky/slow tests | golang-testing | D:\Web\MMO-api-server\.agents\skills\golang-testing\SKILL.md |
+
+### golang-code-style
+- Break lines >~120 chars at semantic boundaries; 4+ args → one per line
+- `:=` for non-zero, `var` for zero-value init; NEVER nil maps/slices
+- Composite literals MUST use field names; reduce nesting (early return); drop unnecessary `else`
+- Switch over if-else chains; ≤4 params (use options struct); `context.Context` first
+- Pass small types by value; pointer for mutation/large structs/nil-meaning
+- Unexport aggressively; minimize public surface; avoid `reflect`
+
+### golang-design-patterns
+- Functional options for optional constructor config; builders for complex construction
+- Error flow: `fmt.Errorf("...: %w", err)` wrapping; sentinel errors for expected cases
+- Graceful shutdown: signal.NotifyContext + context propagation + drain on cancel
+- Resource management: defer close, ownership explicit, context-first signatures
+
+### golang-performance
+- Apply only after profiling/benchmark identifies a real bottleneck
+- Reduce allocations on hot paths (sync.Pool, reuse buffers, preallocate)
+- Prefer `slices`/`maps` stdlib; avoid reflection in hot paths
+
+### golang-testing
+- Table-driven tests with named subtests (`t.Run(tt.name, ...)`); test success AND error cases
+- Test files `_test.go` beside code, named after the source file; same package (white-box)
+- Integration tests use `//go:build integration`; `go test -tags=integration ./...`
+- Use `t.Parallel()` for independent tests; `goleak.VerifyTestMain` for goroutine packages
+- Mock interfaces, not concrete types; NEVER test implementation details
+- Commands: `go test ./...`, `go test -race ./...`, `go test -cover ./...`
+
 ## Project Conventions
 
 | File | Path | Notes |
