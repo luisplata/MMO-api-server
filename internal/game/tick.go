@@ -83,6 +83,9 @@ type SimulationConfig struct {
 	// Resolver drives interest fanout (design D4); nil selects the v1
 	// FlatResolver.
 	Resolver world.InterestResolver
+	// Heights supplies the terrain sampler for the derived Y (design D4,
+	// spec CTH-2); nil selects the flat default (Y stays 0).
+	Heights world.HeightResolver
 	// Sink receives every broadcast snapshot. Required.
 	Sink SnapshotSink
 }
@@ -95,6 +98,7 @@ type Simulation struct {
 	maxSpeed  float32
 	tracker   *world.InterestTracker
 	sink      SnapshotSink
+	heights   world.HeightResolver
 
 	players map[string]*Entity
 	order   []string
@@ -134,6 +138,7 @@ func NewSimulation(cfg SimulationConfig) (*Simulation, error) {
 		assembler: assembler,
 		maxSpeed:  maxSpeed,
 		sink:      cfg.Sink,
+		heights:   cfg.Heights,
 		players:   make(map[string]*Entity),
 		inputs:    make(map[string][]moveInput),
 	}
@@ -151,16 +156,27 @@ func (s *Simulation) Entity(id string) (*Entity, bool) {
 }
 
 // RegisterPlayer spawns a new player at the given position (design D3:
-// player spawning at spawnPos), tracking its interest cell. It fails on
-// a duplicate id.
+// player spawning at spawnPos), tracking its interest cell. The entity's
+// derived Y is resolved from the terrain at the spawn point (design D4,
+// spec CTH-3). It fails on a duplicate id.
 func (s *Simulation) RegisterPlayer(id string, spawn Vec2) error {
 	if _, ok := s.players[id]; ok {
 		return ErrDuplicatePlayer
 	}
-	s.players[id] = &Entity{ID: id, Pos: spawn}
+	s.players[id] = &Entity{ID: id, Pos: spawn, Y: s.spawnHeight(spawn)}
 	s.order = append(s.order, id)
 	s.events = append(s.events, s.tracker.Update(id, spawn.X, spawn.Z)...)
 	return nil
+}
+
+// spawnHeight resolves the terrain height at a point, or 0 when no
+// resolver is wired (flat default, spec CTH-2). Used both at spawn and
+// after every integration.
+func (s *Simulation) spawnHeight(p Vec2) float32 {
+	if s.heights == nil {
+		return 0
+	}
+	return s.heights.HeightAt(p.X, p.Z)
 }
 
 // RemovePlayer unregisters a player, emitting its despawn event and
@@ -231,6 +247,10 @@ func (s *Simulation) Step() error {
 			e.LastInputSeq = in.clientSeq
 		}
 		Integrate(e, dt)
+		// Derived Y (design D4, spec CTH-1): after integration the
+		// entity's height is the terrain at its NEW position — Y is
+		// never integrated and never client-supplied.
+		e.Y = s.spawnHeight(e.Pos)
 		s.events = append(s.events, s.tracker.Update(id, e.Pos.X, e.Pos.Z)...)
 	}
 

@@ -137,3 +137,35 @@ func TestDefaultMaxSpeedIsTunable(t *testing.T) {
 		t.Fatalf("DefaultMaxSpeed = %v, want a positive tunable limit", DefaultMaxSpeed)
 	}
 }
+
+// TestMoveInputDoesNotTouchY pins CTH-1 input: applying a MoveInput sets
+// the velocity and yaw but NEVER the derived height — the wire MoveInput
+// has no Y field (pinned structurally in proto_contract_test), so an
+// entity's Y is left exactly as it was.
+func TestMoveInputDoesNotTouchY(t *testing.T) {
+	e := &Entity{Pos: Vec2{100, 200}, Y: 25, Velocity: Vec2{5, 0}}
+	in := &mmov1.MoveInput{Seq: 1, Dir: &mmov1.Vec2{X: 1, Z: 0}, Speed: 5, Yaw: 1.5}
+	if clamped := SetVelocityFromInput(e, in, 10); clamped {
+		t.Fatalf("SetVelocityFromInput clamped = true, want false for speed 5")
+	}
+	if e.Y != 25 {
+		t.Errorf("Y after MoveInput = %v, want 25 (input never sets Y)", e.Y)
+	}
+	if !almostVec(e.Velocity, Vec2{5, 0}) || !almostEqual(e.Yaw, 1.5) {
+		t.Errorf("velocity/yaw = %v/%v, want (5, 0)/1.5", e.Velocity, e.Yaw)
+	}
+}
+
+// TestIntegrateDoesNotTouchY pins CTH-1 integration: Integrate advances
+// only the ground plane (x, z). Y is derived AFTER integration by the
+// tick and is never integrated itself.
+func TestIntegrateDoesNotTouchY(t *testing.T) {
+	e := &Entity{Pos: Vec2{100, 200}, Y: 12.5, Velocity: Vec2{5, 0}}
+	Integrate(e, 0.05)
+	if e.Y != 12.5 {
+		t.Errorf("Y after Integrate = %v, want 12.5 (never integrated)", e.Y)
+	}
+	if !almostVec(e.Pos, Vec2{100.25, 200}) {
+		t.Errorf("pos after Integrate = %v, want (100.25, 200)", e.Pos)
+	}
+}

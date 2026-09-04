@@ -30,8 +30,14 @@ type Vec2 struct {
 // in radians (v1 sends raw radians; future delta-encoding must handle
 // wrap-around at 0/2π).
 type Entity struct {
-	ID       string
-	Pos      Vec2
+	ID  string
+	Pos Vec2
+	// Y is the DERIVED terrain height (design D4, spec CTH-1): the tick
+	// sets it to the HeightResolver's HeightAt at the entity's position
+	// after integration; it is never integrated and never set from
+	// client input (MoveInput carries no Y field, pinned in
+	// proto_contract_test).
+	Y        float32
 	Velocity Vec2
 	Yaw      float32
 

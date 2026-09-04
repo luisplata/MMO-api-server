@@ -17,6 +17,8 @@ import (
 	"time"
 
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
+
+	"github.com/luisplata/mmo-api-server/internal/world"
 )
 
 // recordingSink captures every snapshot delivery for assertions.
@@ -501,5 +503,156 @@ func TestNewSimulationValidation(t *testing.T) {
 	sim := newSim(t, nil)
 	if sim.Tick() != 0 {
 		t.Errorf("fresh sim tick = %d, want 0", sim.Tick())
+	}
+}
+
+// TestSimulationYFollowsTerrain pins CTH-1 tick: after each Step the
+// entity's Y equals the terrain height at its NEW position — derived
+// from the HeightResolver after integration, never from input.
+func TestSimulationYFollowsTerrain(t *testing.T) {
+	heights, err := world.DefaultHeightfield()
+	if err != nil {
+		t.Fatalf("DefaultHeightfield: %v", err)
+	}
+	sim := newSim(t, func(c *SimulationConfig) { c.Heights = heights })
+	if err := sim.RegisterPlayer("p1", Vec2{100, 200}); err != nil {
+		t.Fatal(err)
+	}
+	e, _ := sim.Entity("p1")
+	if e.Y != 25 {
+		t.Errorf("Y at spawn = %v, want 25 (hill peak at sample (10, 20))", e.Y)
+	}
+	// Move east along the hill flank: Y must track HeightAt at every
+	// post-integration position.
+	sim.QueueInput("p1", move(1, 0, 5, 1))
+	for i := 0; i < 4; i++ {
+		if err := sim.Step(); err != nil {
+			t.Fatal(err)
+		}
+		want := heights.HeightAt(e.Pos.X, e.Pos.Z)
+		if e.Y != want {
+			t.Errorf("step %d: Y = %v, want HeightAt(%v, %v) = %v", i, e.Y, e.Pos.X, e.Pos.Z, want)
+		}
+	}
+	// East of the peak the hill falls away: still on the flank, Y is
+	// strictly below the peak.
+	if e.Pos.X <= 100 {
+		t.Fatalf("player did not advance: pos = %v", e.Pos)
+	}
+	if e.Y >= 25 {
+		t.Errorf("east of the peak Y = %v, want strictly below 25", e.Y)
+	}
+}
+
+// TestSimulationFlatYWithoutResolver pins CTH-2: a simulation without a
+// HeightResolver keeps Y at 0 — flat terrain is the nil-resolver
+// default.
+func TestSimulationFlatYWithoutResolver(t *testing.T) {
+	sim := newSim(t, nil)
+	sim.RegisterPlayer("p1", Vec2{100, 200})
+	sim.QueueInput("p1", move(1, 0, 5, 1))
+	for i := 0; i < 4; i++ {
+		if err := sim.Step(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e, _ := sim.Entity("p1")
+	if e.Y != 0 {
+		t.Errorf("Y without resolver = %v, want 0 (flat)", e.Y)
+	}
+}
+
+// TestSimulationRegisterResolvesSpawnY pins CTH-3 on the sim side: the
+// entity's Y is resolved from the terrain at the spawn XZ the moment it
+// registers, so the WorldSnapshot assembled right after registration
+// carries the spawn height.
+func TestSimulationRegisterResolvesSpawnY(t *testing.T) {
+	heights, err := world.DefaultHeightfield()
+	if err != nil {
+		t.Fatalf("DefaultHeightfield: %v", err)
+	}
+	sim := newSim(t, func(c *SimulationConfig) { c.Heights = heights })
+	if err := sim.RegisterPlayer("p1", Vec2{100, 200}); err != nil {
+		t.Fatal(err)
+	}
+	e, _ := sim.Entity("p1")
+	if e.Y != 25 {
+		t.Errorf("spawn Y on the hill = %v, want 25", e.Y)
+	}
+	// A flat-ground spawn resolves to 0.
+	if err := sim.RegisterPlayer("p2", Vec2{0, 0}); err != nil {
+		t.Fatal(err)
+	}
+	e2, _ := sim.Entity("p2")
+	if e2.Y != 0 {
+		t.Errorf("flat spawn Y = %v, want 0", e2.Y)
+	}
+}
+
+// TestSimulationInputNeverSetsY pins CTH-1 input through the full sim:
+// a client MoveInput changes velocity/yaw, but the entity's Y always
+// equals the terrain at its position — the client has no way to set Y
+// (MoveInput carries no height field).
+func TestSimulationInputNeverSetsY(t *testing.T) {
+	heights, err := world.DefaultHeightfield()
+	if err != nil {
+		t.Fatalf("DefaultHeightfield: %v", err)
+	}
+	sim := newSim(t, func(c *SimulationConfig) { c.Heights = heights })
+	sim.RegisterPlayer("p1", Vec2{100, 200})
+	sim.QueueInput("p1", &mmov1.MoveInput{Seq: 1, Dir: &mmov1.Vec2{X: 1, Z: 0}, Speed: 5, Yaw: 1.5})
+	if err := sim.Step(); err != nil {
+		t.Fatal(err)
+	}
+	e, _ := sim.Entity("p1")
+	if e.Y != heights.HeightAt(e.Pos.X, e.Pos.Z) {
+		t.Errorf("Y = %v, want terrain %v (input must not influence Y)", e.Y, heights.HeightAt(e.Pos.X, e.Pos.Z))
+	}
+}
+
+// TestSimulationDeterminismOnHills pins WTM-6/CTH-1 determinism: two
+// simulations sharing the same HeightResolver and the same input
+// sequence produce identical positions, velocities, yaws AND Y on the
+// hills fixture.
+func TestSimulationDeterminismOnHills(t *testing.T) {
+	run := func() *Simulation {
+		heights, err := world.DefaultHeightfield()
+		if err != nil {
+			t.Fatalf("DefaultHeightfield: %v", err)
+		}
+		sim := newSim(t, func(c *SimulationConfig) { c.Heights = heights })
+		if err := sim.RegisterPlayer("p1", Vec2{100, 200}); err != nil {
+			t.Fatalf("RegisterPlayer p1: %v", err)
+		}
+		if err := sim.RegisterPlayer("p2", Vec2{60, 240}); err != nil {
+			t.Fatalf("RegisterPlayer p2: %v", err)
+		}
+		inputs := []*mmov1.MoveInput{
+			move(1, 0, 5, 1),
+			move(0, 1, 4, 2),
+			move(-1, -1, 999, 3), // over-speed: must clamp identically
+			move(1, 1, 3, 4),
+		}
+		for i := 0; i < 40; i++ {
+			if err := sim.QueueInput("p1", inputs[i%len(inputs)]); err != nil {
+				t.Fatalf("QueueInput: %v", err)
+			}
+			if err := sim.QueueInput("p2", inputs[(i+1)%len(inputs)]); err != nil {
+				t.Fatalf("QueueInput: %v", err)
+			}
+			if err := sim.Step(); err != nil {
+				t.Fatalf("Step: %v", err)
+			}
+		}
+		return sim
+	}
+	a, b := run(), run()
+	for _, id := range []string{"p1", "p2"} {
+		ea, _ := a.Entity(id)
+		eb, _ := b.Entity(id)
+		if ea.Pos != eb.Pos || ea.Velocity != eb.Velocity || ea.Yaw != eb.Yaw || ea.Y != eb.Y {
+			t.Errorf("determinism broke for %s:\n  a: pos=%v vel=%v yaw=%v y=%v\n  b: pos=%v vel=%v yaw=%v y=%v",
+				id, ea.Pos, ea.Velocity, ea.Yaw, ea.Y, eb.Pos, eb.Velocity, eb.Yaw, eb.Y)
+		}
 	}
 }

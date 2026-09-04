@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
+
+	"github.com/luisplata/mmo-api-server/internal/world"
 )
 
 func TestShouldSnapshot(t *testing.T) {
@@ -154,5 +156,39 @@ func TestSnapshotMessageHasNoPitchRoll(t *testing.T) {
 		if name == "pitch" || name == "roll" || name == "y" {
 			t.Errorf("EntityState must not carry %q (camera is client-local, D3)", name)
 		}
+	}
+}
+
+// TestAssemblerCarriesDerivedY pins CTH-5: the shared entity mapper
+// carries the entity's derived Y into the wire state — both the
+// per-player Snapshot (FullStateAssembler) and the enter-world
+// WorldSnapshot (AssembleWorldSnapshot) go through it.
+func TestAssemblerCarriesDerivedY(t *testing.T) {
+	asm := FullStateAssembler{}
+	entities := []*Entity{
+		{ID: "p1", Pos: Vec2{100, 200}, Y: 25, Velocity: Vec2{5, 0}, Yaw: 0.5},
+		{ID: "p2", Pos: Vec2{0, 0}, Y: 0, Velocity: Vec2{}, Yaw: 0},
+	}
+	snap := asm.Assemble(1, entities)
+	if snap.Entities[0].Pos == nil || snap.Entities[0].Pos.Y != 25 {
+		t.Errorf("p1 Pos.Y = %v, want 25 (derived height on the wire)", snap.Entities[0].Pos)
+	}
+	if snap.Entities[1].Pos == nil || snap.Entities[1].Pos.Y != 0 {
+		t.Errorf("p2 Pos.Y = %v, want 0 (flat)", snap.Entities[1].Pos)
+	}
+
+	// The WorldSnapshot path uses the same mapper: simulate on the hills
+	// fixture and check the enter-world state carries the spawn height.
+	heights, err := world.DefaultHeightfield()
+	if err != nil {
+		t.Fatalf("DefaultHeightfield: %v", err)
+	}
+	sim := newSim(t, func(c *SimulationConfig) { c.Heights = heights })
+	if err := sim.RegisterPlayer("alice", Vec2{100, 200}); err != nil {
+		t.Fatal(err)
+	}
+	ws := sim.AssembleWorldSnapshot()
+	if ws.Entities[0].Pos == nil || ws.Entities[0].Pos.Y != 25 {
+		t.Errorf("WorldSnapshot alice Pos.Y = %v, want 25 (spawn height)", ws.Entities[0].Pos)
 	}
 }
