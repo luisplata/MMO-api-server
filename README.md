@@ -101,7 +101,8 @@ go build -o mmo-server ./cmd/server
 | `-tcp` | `:8000` | TCP listen address (handshake, auth, spawn/despawn, reliable commands) |
 | `-udp` | `:8001` | UDP listen address (MoveInput client→server, snapshots server→client) |
 | `-tick` | `20` | Simulation tick rate in Hz (v1 fixed at 20) |
-| `-dev-auth` | `true` | Accept any credentials (username = player ID). Set `false` to reject all (placeholder for real auth). |
+| `-dev-auth` | `true` | Accept any credentials (username = player ID). Set `false` to reject all (placeholder for real auth). Use `-dev-auth=true` with `=` when combining with `-map` (space-separated `true` breaks flag parsing). |
+| `-map` | _(empty)_ | Canonical `<name>.heightmap` to load with its `<name>.manifest` sidecar (verified sha256 + redundant metadata). Empty = embedded `hills` fixture (32×32). See `docs/HEIGHTMAP.md` + `docs/DEPLOYMENT.md`. |
 | `-spawn-x` | `0` | Default spawn X coordinate |
 | `-spawn-z` | `0` | Default spawn Z coordinate |
 
@@ -109,15 +110,26 @@ go build -o mmo-server ./cmd/server
 
 ```bash
 # Custom ports, dev auth on
-./mmo-server -tcp :9000 -udp :9001 -dev-auth true
+./mmo-server -tcp :9000 -udp :9001 -dev-auth=true
 
 # Production-like: auth rejected (no real auth backend yet)
-./mmo-server -dev-auth false
+./mmo-server -dev-auth=false
+
+# With a terrain map (fail-fast if pair is corrupt)
+./mmo-server -map ./internal/world/testdata/combate_map.heightmap -dev-auth=true
+# Embedded hills fixture when -map is omitted
+./mmo-server -dev-auth=true
 ```
 
 ```bash
 # Docker: custom ports
-docker compose run -p 9000:9000 -p 9001:9001/udp mmo-server -tcp :9000 -udp :9001
+docker compose run -p 9000:9000 -p 9001:9001/udp mmo-server -tcp :9000 -udp :9001 -dev-auth=true
+
+# Docker: with a terrain map (mount the pair, use = for bool flags)
+docker run --rm -p 8000:8000 -p 8001:8001/udp \
+  -v "$PWD/internal/world/testdata:/maps:ro" \
+  mmo-api-server-mmo-server -tcp :8000 -udp :8001 -dev-auth=true -map /maps/combate_map.heightmap
+# Validate first: go run ./cmd/heightmap-validate /maps/combate_map.heightmap
 ```
 
 ---
@@ -195,6 +207,9 @@ UDP :8001  ◄── MoveInput / Snapshot ────►  internal/network
 ## Documentation
 
 - **[`docs/PROTOCOL.md`](docs/PROTOCOL.md)** — the wire contract. Read this to build a client.
+- **[`docs/HEIGHTMAP.md`](docs/HEIGHTMAP.md)** — canonical binary terrain format (`.heightmap` + `.manifest` contract).
+- **[`docs/UNITY_HEIGHTMAP_HANDOFF.md`](docs/UNITY_HEIGHTMAP_HANDOFF.md)** — what the Unity dev must deliver (exporter checklist + `heightmap-validate` gate).
+- **[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)** — runbook: gate → staging → atomic activation → ` -map` boot → smoke → rollback N−1.
 - **[`docs/ACADEMIC.md`](docs/ACADEMIC.md)** — first-principles explanation of every architectural decision, the decision log, industry context, and how the code maps to the theory.
 
 ---
