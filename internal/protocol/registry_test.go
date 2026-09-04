@@ -106,14 +106,14 @@ func TestRegistryMessageRoundTripDispatch(t *testing.T) {
 		{"Hello", 1, &mmov1.Hello{ProtoVer: 7}},
 		{"ServerInfo", 2, &mmov1.ServerInfo{ProtoVer: 7, TickRate: 20, ServerTime: 123}},
 		{"AuthRequest", 3, &mmov1.AuthRequest{Username: "alice", Password: "pw"}},
-		{"AuthResponse", 4, &mmov1.AuthResponse{Ok: true, PlayerId: "p1", SpawnPos: &mmov1.Vec2{X: 1, Z: 2}, UdpToken: []byte{1, 2, 3}}},
+		{"AuthResponse", 4, &mmov1.AuthResponse{Ok: true, PlayerId: "p1", SpawnPos: &mmov1.Vec3{X: 1, Y: 0, Z: 2}, UdpToken: []byte{1, 2, 3}}},
 		{"EnterWorld", 5, &mmov1.EnterWorld{}},
 		{"WorldSnapshot", 6, &mmov1.WorldSnapshot{Entities: []*mmov1.EntityState{{Id: "p1"}}}},
 		{"MoveInput", 7, &mmov1.MoveInput{Seq: 1, Dir: &mmov1.Vec2{X: 0.5, Z: 0.5}, Speed: 3, Yaw: 1.2}},
-		{"Snapshot", 8, &mmov1.Snapshot{Seq: 2, Entities: []*mmov1.EntityState{{Id: "p1", Pos: &mmov1.Vec2{X: 4, Z: 5}}}}},
+		{"Snapshot", 8, &mmov1.Snapshot{Seq: 2, Entities: []*mmov1.EntityState{{Id: "p1", Pos: &mmov1.Vec3{X: 4, Y: 0, Z: 5}}}}},
 		{"VersionMismatch", 9, &mmov1.VersionMismatch{MinVer: 1, MaxVer: 9}},
 		{"Ack", 10, &mmov1.Ack{Seq: 42}},
-		{"SpawnEntity", 11, &mmov1.SpawnEntity{EntityId: "plr-009", State: &mmov1.EntityState{Id: "plr-009", Pos: &mmov1.Vec2{X: 1, Z: 2}, Yaw: 0.5}}},
+		{"SpawnEntity", 11, &mmov1.SpawnEntity{EntityId: "plr-009", State: &mmov1.EntityState{Id: "plr-009", Pos: &mmov1.Vec3{X: 1, Y: 0, Z: 2}, Yaw: 0.5}}},
 		{"DespawnEntity", 12, &mmov1.DespawnEntity{EntityId: "plr-009"}},
 	}
 	for _, tc := range cases {

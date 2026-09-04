@@ -54,12 +54,14 @@ type SnapshotAssembler interface {
 }
 
 // entityState maps one entity to its wire state (design D3, spec S16.1):
-// ground-plane position, velocity, and yaw — nothing else. Shared by the
-// snapshot assembler and the enter-world WorldSnapshot.
+// ground-plane position as a v2 Vec3 (Y = derived terrain height, 0 in
+// Slice A until the HeightResolver wiring lands), velocity, and yaw —
+// nothing else. Shared by the snapshot assembler and the enter-world
+// WorldSnapshot.
 func entityState(e *Entity) *mmov1.EntityState {
 	return &mmov1.EntityState{
 		Id:       e.ID,
-		Pos:      &mmov1.Vec2{X: e.Pos.X, Z: e.Pos.Z},
+		Pos:      &mmov1.Vec3{X: e.Pos.X, Y: 0, Z: e.Pos.Z},
 		Velocity: &mmov1.Vec2{X: e.Velocity.X, Z: e.Velocity.Z},
 		Yaw:      e.Yaw,
 	}

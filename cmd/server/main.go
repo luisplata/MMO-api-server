@@ -33,8 +33,8 @@ func main() {
 		DevAuth:          *devAuth,
 		SpawnX:           float32(*spawnX),
 		SpawnZ:           float32(*spawnZ),
-		MinProtoVer:      1,
-		MaxProtoVer:      1,
+		MinProtoVer:      2,
+		MaxProtoVer:      2,
 		HandshakeTimeout: 10 * time.Second,
 	})
 	if err != nil {

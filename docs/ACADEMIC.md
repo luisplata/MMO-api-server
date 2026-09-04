@@ -149,11 +149,16 @@ Los mensajes viajan como bytes. Necesitamos un formato que sea:
 **Protocol Buffers (proto3)** parte de un archivo de schema: `proto/v1/world.proto`. Ahí definís mensajes, campos y números de campo:
 
 ```proto
+message Vec3 {
+  float x = 1;
+  float y = 2;  // altura derivada del terreno (server), nunca del cliente
+  float z = 3;
+}
 message EntityState {
   string id = 1;
-  Vec2   pos = 2;   // x, z sobre el plano
-  Vec2   velocity = 3;
-  float  yaw = 4;   // en radianes
+  Vec3   pos = 2;      // x, y, z — y = HeightAt(x, z) del mapa de alturas
+  Vec2   velocity = 3; // x, z sobre el plano (la velocidad no tiene altura)
+  float  yaw = 4;      // en radianes
 }
 ```
 
@@ -377,13 +382,14 @@ Los clientes y el servidor se actualizan en momentos distintos. Si mañana agreg
 #### (b) Cómo funciona
 
 - **El major del protocolo vive en el envelope** (`version`, u16). Cada frame se identifica solo.
-- **Se negocia en el handshake**: el cliente manda `Hello{ protoVer }`; el servidor valida **tanto** la versión del envelope **como** el `Hello.protoVer` contra su rango soportado (`[1,1]` en v1). Fuera de rango → `VersionMismatch{ minVer, maxVer }` y cierre.
+- **Se negocia en el handshake**: el cliente manda `Hello{ protoVer }`; el servidor valida **tanto** la versión del envelope **como** el `Hello.protoVer` contra su rango soportado (`[2,2]` en v2). Fuera de rango → `VersionMismatch{ minVer, maxVer }` y cierre (fail-fast, antes de auth).
 - **Los minors son aditivos, siempre**: mensajes nuevos → **ids de tipo nuevos** (11, 12, …); campos nuevos → **números de campo nuevos**; campos removidos → `reserved`, nunca se reutiliza el número. La preservación de campos desconocidos (ver 3.2) hace que un cliente viejo y un server nuevo **interoperen**: lo que no conocés, lo ignorás y lo devolvés intacto.
 
 ```
-v1 (hoy)        ids 1..12            clientes con major=1 ✔
-v1.1 (futuro)   + id 13, + campo 5   clientes v1.0 siguen andando (desconocidos preservados)
-v2 (futuro)     major=2              clientes major=1 → VersionMismatch + rango
+v1 (histórico)   ids 1..12, pos Vec2      clientes major=1 — ya no aceptados
+v2 (hoy)         ids 1..12, pos Vec3      clientes major=2 ✔
+v2.1 (futuro)    + id 13, + campo 5       clientes v2.0 siguen andando (desconocidos preservados)
+v3 (futuro)      major=3                  clientes major=2 → VersionMismatch + rango
 ```
 
 #### (c) Por qué elegimos ESTO
@@ -416,7 +422,7 @@ Porque la alternativa — "no versionar" — es un desastre garantizado: un camb
 |---|---|---|---|---|
 | **D1** | Envelope binario de 11 bytes + payload protobuf | (a) header binario fijo; (b) wrapper protobuf oneof | Byte-layout exacto del contrato, hot path barato, type id para el registro | (b) viola el byte-layout y agrega un parse por frame UDP |
 | **D2** | Registro `map[typeID]→mensaje` en `internal/protocol` | (a) registro; (b) un oneof gigante | Compleción y dispatch desconocido testeables en ambas direcciones; paridad con el `.proto` forzada por test | (b) un switch gigante que crece con cada mensaje |
-| **D3** | `EntityState` = `Vec2{x,z}` + `velocity` + `yaw` (sin pitch/roll) | (a) Vec2 + yaw; (b) Vec3 + pitch/roll | "Sin pitch/roll" **estructuralmente imposible** — la cámara es local al cliente y no se networkea | (b) riesgo de sincronizar rotación que no debería ir por red |
+| **D3** | `EntityState` = `Vec3{x,y,z}` (pos) + `Vec2` (velocity) + `yaw` (sin pitch/roll) | (a) Vec3 con `y` derivada del terreno; (b) Vec2 + yaw sin altura | En v2 la posición es un `Vec3`: `pos.y` y `spawnPos.y` son la **altura derivada del terreno** — el server la resuelve cada tick con `HeightAt(x, z)` sobre el heightmap (nunca la integra, nunca la recibe del cliente). "Sin pitch/roll" sigue siendo **estructuralmente imposible** — la cámara es local al cliente y no se networkea | (b) sin altura: el mundo sería un plano 2.5D y el terreno tendría que reconstruirse en el cliente — duplicando la fuente de verdad |
 | **D4** | Seam `InterestResolver` (interfaz) | (a) interfaz; (b) hardcodear "todos" | El resolver de chunks se enchufa después con **cero cambios de protocolo** (3.6) | (b) el día de los chunks habría que tocar el contrato o reescribir el server |
 | **D5** | Ack sin retransmisión (v1) | (a) `Ack{seq}` + sin retransmitir; (b) reliable-UDP completo (KCP-like) | Cumple "seq/ack para autoridad" con lo mínimo; los inputs son idempotentes y baratos; el snapshot siguiente corrige | (b) scope creep (spec dice NO KCP) y complejidad de una capa de fiabilidad |
 | **D6** | Codegen con protoc + protoc-gen-go + protoc-gen-csharp, pinned | (a) protoc; (b) buf como orquestador | Toolchain mínima; C# vía plugin remoto de buf (no hay binario Windows de protoc-gen-csharp sin toolchain C++) | (b) buf completo: mejor UX pero una dependencia más |
@@ -493,7 +499,7 @@ UI/Presentation → Application → GameClient → NetworkClient → TCP/UDP
 Cliente                                      Servidor
   │ TCP connect (:8000)                         │ acceptLoop → session.NewSession
   ├────────────────────────────────────────────►│  state = connecting
-  │ Hello{ protoVer: 1 }                        │  checkVersion + Hello.ProtoVer ∈ [1,1]
+  │ Hello{ protoVer: 2 }                        │  checkVersion + Hello.ProtoVer ∈ [2,2]
   ├────────────────────────────────────────────►│  → handshaking
   │◄── ServerInfo{ protoVer:1, tickRate:20, serverTime } ─┤
   │ AuthRequest{ username, password }           │  → authenticating

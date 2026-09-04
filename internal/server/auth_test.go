@@ -19,7 +19,7 @@ func TestDevAuthenticator(t *testing.T) {
 		password  string
 		wantID    string
 		wantErr   bool
-		wantSpawn *mmov1.Vec2
+		wantSpawn *mmov1.Vec3
 	}{
 		{
 			name:      "enabled accepts any credentials",
@@ -27,7 +27,7 @@ func TestDevAuthenticator(t *testing.T) {
 			username:  "carol",
 			password:  "anything",
 			wantID:    "carol",
-			wantSpawn: &mmov1.Vec2{X: 5, Z: 6},
+			wantSpawn: &mmov1.Vec3{X: 5, Y: 0, Z: 6},
 		},
 		{
 			name:      "enabled rejects empty username",
@@ -63,8 +63,8 @@ func TestDevAuthenticator(t *testing.T) {
 			if id != tc.wantID {
 				t.Errorf("player id = %q, want %q", id, tc.wantID)
 			}
-			if spawn == nil || spawn.X != tc.wantSpawn.X || spawn.Z != tc.wantSpawn.Z {
-				t.Errorf("spawn = %v, want (%v, %v)", spawn, tc.wantSpawn.X, tc.wantSpawn.Z)
+			if spawn == nil || spawn.X != tc.wantSpawn.X || spawn.Y != tc.wantSpawn.Y || spawn.Z != tc.wantSpawn.Z {
+				t.Errorf("spawn = %v, want (%v, %v, %v)", spawn, tc.wantSpawn.X, tc.wantSpawn.Y, tc.wantSpawn.Z)
 			}
 		})
 	}

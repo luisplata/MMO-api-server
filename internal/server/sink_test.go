@@ -17,7 +17,7 @@ func TestSendSnapshot(t *testing.T) {
 	snap := &mmov1.Snapshot{
 		Seq: 42,
 		Entities: []*mmov1.EntityState{
-			{Id: "alice", Pos: &mmov1.Vec2{X: 1, Z: 2}, Velocity: &mmov1.Vec2{X: 3, Z: 4}, Yaw: 0.5},
+			{Id: "alice", Pos: &mmov1.Vec3{X: 1, Y: 0, Z: 2}, Velocity: &mmov1.Vec2{X: 3, Z: 4}, Yaw: 0.5},
 		},
 	}
 

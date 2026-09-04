@@ -283,7 +283,7 @@ func (s *Server) enterWorld(ctx context.Context, conn net.Conn, sess *session.Se
 	s.players[pid] = &player{sess: sess, tr: tr, tcp: conn}
 	s.mu.Unlock()
 
-	frame, err := s.registerAndSnapshot(ctx, pid, vecFromProto(sess.SpawnPos()), sess.WireVersion())
+	frame, err := s.registerAndSnapshot(ctx, pid, spawnFromProto(sess.SpawnPos()), sess.WireVersion())
 	if err != nil {
 		s.mu.Lock()
 		delete(s.players, pid)

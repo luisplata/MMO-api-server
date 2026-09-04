@@ -72,8 +72,8 @@ func TestEntityStateFromGame(t *testing.T) {
 	if got.Id != "p1" {
 		t.Errorf("Id = %q, want p1", got.Id)
 	}
-	if got.Pos == nil || got.Pos.X != 1 || got.Pos.Z != 2 {
-		t.Errorf("Pos = %v, want (1, 2)", got.Pos)
+	if got.Pos == nil || got.Pos.X != 1 || got.Pos.Y != 0 || got.Pos.Z != 2 {
+		t.Errorf("Pos = %v, want (1, 0, 2)", got.Pos)
 	}
 	if got.Velocity == nil || got.Velocity.X != 3 || got.Velocity.Z != 4 {
 		t.Errorf("Velocity = %v, want (3, 4)", got.Velocity)

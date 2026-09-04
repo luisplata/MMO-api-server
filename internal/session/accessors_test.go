@@ -24,9 +24,9 @@ import (
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
-// assertSpawn compares two Vec2 pointers by value (nil-aware) instead of
+// assertSpawn compares two Vec3 pointers by value (nil-aware) instead of
 // by identity, so the accessor could legally copy and still pass.
-func assertSpawn(t *testing.T, got, want *mmov1.Vec2) {
+func assertSpawn(t *testing.T, got, want *mmov1.Vec3) {
 	t.Helper()
 	if want == nil {
 		if got != nil {
@@ -35,11 +35,11 @@ func assertSpawn(t *testing.T, got, want *mmov1.Vec2) {
 		return
 	}
 	if got == nil {
-		t.Errorf("SpawnPos() = nil, want (%v, %v)", want.X, want.Z)
+		t.Errorf("SpawnPos() = nil, want (%v, %v, %v)", want.X, want.Y, want.Z)
 		return
 	}
-	if got.X != want.X || got.Z != want.Z {
-		t.Errorf("SpawnPos() = (%v, %v), want (%v, %v)", got.X, got.Z, want.X, want.Z)
+	if got.X != want.X || got.Y != want.Y || got.Z != want.Z {
+		t.Errorf("SpawnPos() = (%v, %v, %v), want (%v, %v, %v)", got.X, got.Y, got.Z, want.X, want.Y, want.Z)
 	}
 }
 
@@ -52,7 +52,7 @@ func TestSessionAccessors(t *testing.T) {
 		setup      func(t *testing.T, s *Session, reg *protocol.Registry)
 		wantVer    uint16
 		wantPlayer string
-		wantSpawn  *mmov1.Vec2
+		wantSpawn  *mmov1.Vec3
 	}{
 		{
 			name:       "fresh session",
@@ -73,7 +73,7 @@ func TestSessionAccessors(t *testing.T) {
 			setup:      inWorld,
 			wantVer:    testVersion,
 			wantPlayer: "p1",
-			wantSpawn:  &mmov1.Vec2{X: 1.5, Z: -2.5},
+			wantSpawn:  &mmov1.Vec3{X: 1.5, Y: 0, Z: -2.5},
 		},
 		{
 			name: "failed auth leaves accessors empty",

@@ -67,12 +67,12 @@ func (f *fakeClock) Advance(d time.Duration) { f.cur = f.cur.Add(d) }
 type fakeAuth struct {
 	ok       map[string]string
 	playerID string
-	spawn    mmov1.Vec2
+	spawn    mmov1.Vec3
 }
 
-func (f *fakeAuth) Authenticate(username, password string) (string, *mmov1.Vec2, error) {
+func (f *fakeAuth) Authenticate(username, password string) (string, *mmov1.Vec3, error) {
 	if want, ok := f.ok[username]; ok && want == password {
-		return f.playerID, &mmov1.Vec2{X: f.spawn.X, Z: f.spawn.Z}, nil
+		return f.playerID, &mmov1.Vec3{X: f.spawn.X, Y: f.spawn.Y, Z: f.spawn.Z}, nil
 	}
 	return "", nil, fmt.Errorf("invalid credentials for %q", username)
 }
@@ -94,7 +94,7 @@ func newTestSession(t *testing.T, mut func(*Config)) (*Session, *mockTransport, 
 		Auth: &fakeAuth{
 			ok:       map[string]string{"alice": "pw"},
 			playerID: "p1",
-			spawn:    mmov1.Vec2{X: 1.5, Z: -2.5},
+			spawn:    mmov1.Vec3{X: 1.5, Y: 0, Z: -2.5},
 		},
 		Now: clock.Now,
 	}
@@ -235,8 +235,8 @@ func TestHandshakeHappyPath(t *testing.T) {
 	if ar.PlayerId != "p1" {
 		t.Errorf("AuthResponse.PlayerId = %q, want %q", ar.PlayerId, "p1")
 	}
-	if ar.SpawnPos == nil || ar.SpawnPos.X != 1.5 || ar.SpawnPos.Z != -2.5 {
-		t.Errorf("AuthResponse.SpawnPos = %v, want (1.5, -2.5)", ar.SpawnPos)
+	if ar.SpawnPos == nil || ar.SpawnPos.X != 1.5 || ar.SpawnPos.Y != 0 || ar.SpawnPos.Z != -2.5 {
+		t.Errorf("AuthResponse.SpawnPos = %v, want (1.5, 0, -2.5)", ar.SpawnPos)
 	}
 	if len(ar.UdpToken) == 0 {
 		t.Errorf("AuthResponse.UdpToken is empty, want a fresh token")
@@ -363,6 +363,56 @@ func TestVersionMismatchAtHello(t *testing.T) {
 	}
 	if vm.MinVer != 1 || vm.MaxVer != 9 {
 		t.Errorf("VersionMismatch = [%d,%d], want [1,9]", vm.MinVer, vm.MaxVer)
+	}
+}
+
+// TestV2RejectsV1Clients pins the v2 contract (spec CTH-4): a server
+// whose supported range is exactly [2,2] must fail-fast a v1 client.
+// Both the envelope version AND Hello.protoVer are validated; a v1
+// client trips either gate and receives VersionMismatch[2,2] followed by
+// a close — it can never reach auth.
+func TestV2RejectsV1Clients(t *testing.T) {
+	reg := protocol.NewWorldRegistry()
+
+	cases := []struct {
+		name  string
+		frame func(*testing.T, *protocol.Registry) []byte
+	}{
+		{
+			name: "hello with envelope version 1",
+			frame: func(t *testing.T, reg *protocol.Registry) []byte {
+				return rawFrame(t, reg, &mmov1.Hello{ProtoVer: 1}, 1)
+			},
+		},
+		{
+			name: "hello with protoVer 1 over a v2 envelope",
+			frame: func(t *testing.T, reg *protocol.Registry) []byte {
+				return rawFrame(t, reg, &mmov1.Hello{ProtoVer: 1}, 2)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, tr, _ := newTestSession(t, func(c *Config) { c.MinProtoVer = 2; c.MaxProtoVer = 2 })
+			err := s.HandleTCP(tc.frame(t, reg))
+			if !errors.Is(err, ErrVersionMismatch) {
+				t.Errorf("err = %v, want ErrVersionMismatch", err)
+			}
+			if s.State() != StateClosed || !tr.closed {
+				t.Errorf("session must be closed (state=%s closed=%v)", s.State(), tr.closed)
+			}
+			env, msg := sentFrame(t, reg, tr, 0)
+			vm, ok := msg.(*mmov1.VersionMismatch)
+			if !ok {
+				t.Fatalf("frame 0 = %T, want VersionMismatch", msg)
+			}
+			if vm.MinVer != 2 || vm.MaxVer != 2 {
+				t.Errorf("VersionMismatch = [%d,%d], want [2,2]", vm.MinVer, vm.MaxVer)
+			}
+			if env.Type != 9 {
+				t.Errorf("VersionMismatch envelope type = %d, want 9", env.Type)
+			}
+		})
 	}
 }
 

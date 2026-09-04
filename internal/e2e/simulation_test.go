@@ -36,9 +36,10 @@ import (
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
-// protoVersion is the only protocol version v1 negotiates (server range
-// 1..1, Hello{ProtoVer:1}).
-const protoVersion = 1
+// protoVersion is the only protocol major v2 negotiates (server range
+// 2..2, Hello{ProtoVer:2}); a v1 client is rejected with
+// VersionMismatch before auth (spec CTH-4).
+const protoVersion = 2
 
 // waitTimeout bounds every client wait in this file.
 const waitTimeout = 5 * time.Second

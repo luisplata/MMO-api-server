@@ -83,8 +83,10 @@ type Config struct {
 type Authenticator interface {
 	// Authenticate returns the player id and spawn position for valid
 	// credentials, or an error for invalid ones. The spawn pointer is
-	// copied into AuthResponse.SpawnPos.
-	Authenticate(username, password string) (playerID string, spawn *mmov1.Vec2, err error)
+	// copied into AuthResponse.SpawnPos. spawnPos is a Vec3 (v2): its
+	// Y component is the terrain height at the spawn point, resolved by
+	// the authenticator from the active map.
+	Authenticate(username, password string) (playerID string, spawn *mmov1.Vec3, err error)
 }
 
 // Session drives one client connection through the lifecycle. It owns
@@ -113,9 +115,10 @@ type Session struct {
 	// playerID / spawnPos are the authenticated identity (spec R12),
 	// populated by a successful AuthRequest. The wiring layer (PR4b)
 	// reads them to register the player in the simulation and to send
-	// the enter-world WorldSnapshot from the spawn position.
+	// the enter-world WorldSnapshot from the spawn position. spawnPos is
+	// a Vec3 (v2) carrying the terrain height in Y.
 	playerID string
-	spawnPos *mmov1.Vec2
+	spawnPos *mmov1.Vec3
 
 	// handshakeDeadline is now()+HandshakeTimeout at construction (or
 	// zero when timeouts are disabled).
@@ -189,8 +192,9 @@ func (s *Session) PlayerID() string { return s.playerID }
 
 // SpawnPos returns the authenticated player's spawn position, or nil
 // before a successful AuthRequest. The wiring layer registers the
-// player at this position in the simulation (design D3).
-func (s *Session) SpawnPos() *mmov1.Vec2 { return s.spawnPos }
+// player at this position in the simulation (design D3). In v2 the
+// position is a Vec3 whose Y is the terrain height at the spawn point.
+func (s *Session) SpawnPos() *mmov1.Vec3 { return s.spawnPos }
 
 // HandleTCP processes one inbound TCP frame and drives the state
 // machine. On a protocol violation (undecodable frame, out-of-order

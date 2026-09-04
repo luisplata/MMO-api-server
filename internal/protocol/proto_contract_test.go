@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -85,7 +86,7 @@ func TestMessageRoundTrip(t *testing.T) {
 			msg: &mmov1.AuthResponse{
 				Ok:           true,
 				PlayerId:     "plr-001",
-				SpawnPos:     &mmov1.Vec2{X: 12.5, Z: -8.25},
+				SpawnPos:     &mmov1.Vec3{X: 12.5, Y: 3.25, Z: -8.25},
 				UdpToken:     []byte{0xDE, 0xAD, 0xBE, 0xEF},
 				ErrorMessage: "",
 			},
@@ -94,7 +95,7 @@ func TestMessageRoundTrip(t *testing.T) {
 				if !a.Ok || a.PlayerId != "plr-001" || string(a.UdpToken) != string([]byte{0xDE, 0xAD, 0xBE, 0xEF}) {
 					t.Errorf("AuthResponse round-trip mismatch: %+v", a)
 				}
-				if a.SpawnPos == nil || a.SpawnPos.X != 12.5 || a.SpawnPos.Z != -8.25 {
+				if a.SpawnPos == nil || a.SpawnPos.X != 12.5 || a.SpawnPos.Y != 3.25 || a.SpawnPos.Z != -8.25 {
 					t.Errorf("AuthResponse.spawnPos round-trip mismatch: %+v", a.SpawnPos)
 				}
 			},
@@ -114,8 +115,8 @@ func TestMessageRoundTrip(t *testing.T) {
 			name: "WorldSnapshot",
 			msg: &mmov1.WorldSnapshot{
 				Entities: []*mmov1.EntityState{
-					{Id: "plr-001", Pos: &mmov1.Vec2{X: 10, Z: 20}, Velocity: &mmov1.Vec2{X: 5, Z: 0}, Yaw: 1.5707964},
-					{Id: "plr-002", Pos: &mmov1.Vec2{X: -3, Z: 4}, Velocity: &mmov1.Vec2{X: 0, Z: 2.5}, Yaw: 0},
+					{Id: "plr-001", Pos: &mmov1.Vec3{X: 10, Y: 4.5, Z: 20}, Velocity: &mmov1.Vec2{X: 5, Z: 0}, Yaw: 1.5707964},
+					{Id: "plr-002", Pos: &mmov1.Vec3{X: -3, Y: 0, Z: 4}, Velocity: &mmov1.Vec2{X: 0, Z: 2.5}, Yaw: 0},
 				},
 			},
 			verify: func(t *testing.T, got proto.Message) {
@@ -124,12 +125,12 @@ func TestMessageRoundTrip(t *testing.T) {
 					t.Fatalf("WorldSnapshot has %d entities, want 2", len(ws.Entities))
 				}
 				e0 := ws.Entities[0]
-				if e0.Id != "plr-001" || e0.Pos.X != 10 || e0.Pos.Z != 20 ||
+				if e0.Id != "plr-001" || e0.Pos.X != 10 || e0.Pos.Y != 4.5 || e0.Pos.Z != 20 ||
 					e0.Velocity.X != 5 || e0.Velocity.Z != 0 || e0.Yaw != 1.5707964 {
 					t.Errorf("WorldSnapshot entity[0] round-trip mismatch: %+v", e0)
 				}
 				e1 := ws.Entities[1]
-				if e1.Id != "plr-002" || e1.Pos.X != -3 || e1.Pos.Z != 4 ||
+				if e1.Id != "plr-002" || e1.Pos.X != -3 || e1.Pos.Y != 0 || e1.Pos.Z != 4 ||
 					e1.Velocity.X != 0 || e1.Velocity.Z != 2.5 || e1.Yaw != 0 {
 					t.Errorf("WorldSnapshot entity[1] round-trip mismatch: %+v", e1)
 				}
@@ -158,9 +159,9 @@ func TestMessageRoundTrip(t *testing.T) {
 			msg: &mmov1.Snapshot{
 				Seq: 9001,
 				Entities: []*mmov1.EntityState{
-					{Id: "plr-001", Pos: &mmov1.Vec2{X: 100.5, Z: 200.25}, Velocity: &mmov1.Vec2{X: 1, Z: -1}, Yaw: 3.1415927},
-					{Id: "plr-002", Pos: &mmov1.Vec2{X: -50, Z: -60}, Velocity: &mmov1.Vec2{X: 0, Z: 0}, Yaw: 4.712389},
-					{Id: "plr-003", Pos: &mmov1.Vec2{X: 0, Z: 0}, Velocity: &mmov1.Vec2{X: 2, Z: 2}, Yaw: 0.5},
+					{Id: "plr-001", Pos: &mmov1.Vec3{X: 100.5, Y: 12.25, Z: 200.25}, Velocity: &mmov1.Vec2{X: 1, Z: -1}, Yaw: 3.1415927},
+					{Id: "plr-002", Pos: &mmov1.Vec3{X: -50, Y: -2, Z: -60}, Velocity: &mmov1.Vec2{X: 0, Z: 0}, Yaw: 4.712389},
+					{Id: "plr-003", Pos: &mmov1.Vec3{X: 0, Y: 0, Z: 0}, Velocity: &mmov1.Vec2{X: 2, Z: 2}, Yaw: 0.5},
 				},
 			},
 			verify: func(t *testing.T, got proto.Message) {
@@ -174,17 +175,18 @@ func TestMessageRoundTrip(t *testing.T) {
 				want := []struct {
 					id  string
 					x   float32
+					y   float32
 					z   float32
 					yaw float32
 				}{
-					{"plr-001", 100.5, 200.25, 3.1415927},
-					{"plr-002", -50, -60, 4.712389},
-					{"plr-003", 0, 0, 0.5},
+					{"plr-001", 100.5, 12.25, 200.25, 3.1415927},
+					{"plr-002", -50, -2, -60, 4.712389},
+					{"plr-003", 0, 0, 0, 0.5},
 				}
 				for i, w := range want {
 					e := s.Entities[i]
-					if e.Id != w.id || e.Pos.X != w.x || e.Pos.Z != w.z || e.Yaw != w.yaw {
-						t.Errorf("Snapshot entity[%d] mismatch: got %+v, want id=%s pos=(%v,%v) yaw=%v", i, e, w.id, w.x, w.z, w.yaw)
+					if e.Id != w.id || e.Pos.X != w.x || e.Pos.Y != w.y || e.Pos.Z != w.z || e.Yaw != w.yaw {
+						t.Errorf("Snapshot entity[%d] mismatch: got %+v, want id=%s pos=(%v,%v,%v) yaw=%v", i, e, w.id, w.x, w.y, w.z, w.yaw)
 					}
 				}
 			},
@@ -204,7 +206,7 @@ func TestMessageRoundTrip(t *testing.T) {
 				EntityId: "plr-001",
 				State: &mmov1.EntityState{
 					Id:       "plr-001",
-					Pos:      &mmov1.Vec2{X: 12.5, Z: -8.25},
+					Pos:      &mmov1.Vec3{X: 12.5, Y: 7.5, Z: -8.25},
 					Velocity: &mmov1.Vec2{X: 1.5, Z: 0},
 					Yaw:      0.7853982,
 				},
@@ -217,7 +219,7 @@ func TestMessageRoundTrip(t *testing.T) {
 				if s.State == nil {
 					t.Fatalf("SpawnEntity.state is nil")
 				}
-				if s.State.Id != "plr-001" || s.State.Pos.X != 12.5 || s.State.Pos.Z != -8.25 ||
+				if s.State.Id != "plr-001" || s.State.Pos.X != 12.5 || s.State.Pos.Y != 7.5 || s.State.Pos.Z != -8.25 ||
 					s.State.Velocity.X != 1.5 || s.State.Velocity.Z != 0 || s.State.Yaw != 0.7853982 {
 					t.Errorf("SpawnEntity.state round-trip mismatch: %+v", s.State)
 				}
@@ -285,11 +287,13 @@ func TestUnknownFieldPreservation_AdditiveMinorBump(t *testing.T) {
 	}
 }
 
-// TestEntityStateShapeNoPitchRoll pins design D3 / spec R16 S16.1 at the
-// contract level: EntityState carries id, pos, velocity and yaw — and
-// pitch/roll fields must NOT exist (structurally impossible to network
-// the camera rotation). The field set is pinned exactly, so accidental
-// additions also fail this test.
+// TestEntityStateShapeNoPitchRoll pins design D3 / spec CTH-6 at the
+// contract level: EntityState carries id, pos (Vec3: x, y, z), velocity
+// (Vec2) and yaw — and pitch/roll fields must NOT exist (structurally
+// impossible to network the camera rotation). In v2, pos.Y is the
+// server-derived terrain height (never client-supplied); the field set is
+// pinned exactly, so accidental additions or shape regressions fail this
+// test.
 func TestEntityStateShapeNoPitchRoll(t *testing.T) {
 	fields := (&mmov1.EntityState{}).ProtoReflect().Descriptor().Fields()
 	want := []string{"id", "pos", "velocity", "yaw"}
@@ -312,5 +316,49 @@ func TestEntityStateShapeNoPitchRoll(t *testing.T) {
 		if strings.Contains(name, "pitch") || strings.Contains(name, "roll") {
 			t.Errorf("EntityState must not contain pitch/roll fields, found %q", name)
 		}
+	}
+}
+
+// vecFieldNames returns the leaf field names of a message-typed field,
+// in field-number order. It fails the test when fd is not a message.
+func vecFieldNames(t *testing.T, fd protoreflect.FieldDescriptor) []string {
+	t.Helper()
+	if fd.Kind() != protoreflect.MessageKind {
+		t.Fatalf("field %s kind = %s, want message", fd.Name(), fd.Kind())
+	}
+	msg := fd.Message()
+	names := make([]string, 0, msg.Fields().Len())
+	for i := 0; i < msg.Fields().Len(); i++ {
+		names = append(names, string(msg.Fields().ByNumber(protoreflect.FieldNumber(i+1)).Name()))
+	}
+	return names
+}
+
+// TestEntityPosIsVec3AndVelocityVec2 pins spec CTH-6 at the field-shape
+// level: EntityState.pos and AuthResponse.spawnPos are Vec3 (exactly
+// x, y, z — three floats), while velocity and MoveInput.dir stay Vec2
+// (exactly x, z). No pitch/roll anywhere; the Y component is networked
+// and server-derived in v2.
+func TestEntityPosIsVec3AndVelocityVec2(t *testing.T) {
+	es := (&mmov1.EntityState{}).ProtoReflect().Descriptor()
+	pos := es.Fields().ByName("pos")
+	if got := vecFieldNames(t, pos); !reflect.DeepEqual(got, []string{"x", "y", "z"}) {
+		t.Errorf("EntityState.pos fields = %v, want [x y z] (Vec3)", got)
+	}
+	vel := es.Fields().ByName("velocity")
+	if got := vecFieldNames(t, vel); !reflect.DeepEqual(got, []string{"x", "z"}) {
+		t.Errorf("EntityState.velocity fields = %v, want [x z] (Vec2)", got)
+	}
+
+	ar := (&mmov1.AuthResponse{}).ProtoReflect().Descriptor()
+	spawn := ar.Fields().ByName("spawnPos")
+	if got := vecFieldNames(t, spawn); !reflect.DeepEqual(got, []string{"x", "y", "z"}) {
+		t.Errorf("AuthResponse.spawnPos fields = %v, want [x y z] (Vec3)", got)
+	}
+
+	mi := (&mmov1.MoveInput{}).ProtoReflect().Descriptor()
+	dir := mi.Fields().ByName("dir")
+	if got := vecFieldNames(t, dir); !reflect.DeepEqual(got, []string{"x", "z"}) {
+		t.Errorf("MoveInput.dir fields = %v, want [x z] (Vec2, unchanged in v2)", got)
 	}
 }

@@ -19,13 +19,16 @@ type devAuthenticator struct {
 	spawn   game.Vec2
 }
 
-// Authenticate implements session.Authenticator.
-func (d devAuthenticator) Authenticate(username, password string) (string, *mmov1.Vec2, error) {
+// Authenticate implements session.Authenticator. The returned spawn is
+// a v2 Vec3; the Y component is the terrain height at the spawn point,
+// resolved from the active map (Slice B wiring) — before that lands it
+// is 0.
+func (d devAuthenticator) Authenticate(username, password string) (string, *mmov1.Vec3, error) {
 	if !d.enabled {
 		return "", nil, errors.New("server: authentication disabled (real auth pending)")
 	}
 	if username == "" {
 		return "", nil, errors.New("server: empty username")
 	}
-	return username, &mmov1.Vec2{X: d.spawn.X, Z: d.spawn.Z}, nil
+	return username, &mmov1.Vec3{X: d.spawn.X, Y: 0, Z: d.spawn.Z}, nil
 }
