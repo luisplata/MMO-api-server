@@ -93,7 +93,7 @@ func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	srv := &Server{
 		reg:     protocol.NewWorldRegistry(),
-		auth:    devAuthenticator{enabled: true, spawn: game.Vec2{X: 1, Z: 2}},
+		auth:    devAuthenticator{enabled: true},
 		udp:     &fakePacketConn{},
 		players: make(map[string]*player),
 		simOps:  make(chan simOp),
@@ -117,7 +117,7 @@ func newInWorldSession(t *testing.T, reg *protocol.Registry, username string) *s
 		MinProtoVer: 1,
 		MaxProtoVer: 9,
 		TickRate:    game.TickRate,
-		Auth:        devAuthenticator{enabled: true, spawn: game.Vec2{}},
+		Auth:        devAuthenticator{enabled: true},
 		Now:         time.Now,
 		Templates:   testTemplateRepo(),
 		Characters:  testCharacterRepo(username),
@@ -241,20 +241,26 @@ func TestEnterWorldRegistersAndSendsRealSnapshot(t *testing.T) {
 		t.Fatalf("enterWorld: %v", err)
 	}
 
-	// Registered in the sim at the dev spawn position {1, 2}.
-	e, ok := srv.sim.Entity("alice")
+	// Registered in the sim by the ACTIVE CHARACTER id (design D3), at
+	// the character spawn position {1, 2}, carrying the character's
+	// templateId (design D5).
+	e, ok := srv.sim.Entity(testCharID)
 	if !ok {
-		t.Fatalf("alice not registered in the simulation")
+		t.Fatalf("%q (character) not registered in the simulation", testCharID)
 	}
 	if e.Pos.X != 1 || e.Pos.Z != 2 {
-		t.Errorf("alice pos = %v, want spawn (1, 2)", e.Pos)
+		t.Errorf("char pos = %v, want spawn (1, 2)", e.Pos)
 	}
-	if !srv.isRegistered("alice") {
-		t.Errorf("alice missing from the server player map")
+	if e.TemplateID != "warrior" {
+		t.Errorf("char TemplateID = %q, want warrior", e.TemplateID)
+	}
+	if !srv.isRegistered(testCharID) {
+		t.Errorf("%q missing from the server player map", testCharID)
 	}
 
 	// The client receives the REAL WorldSnapshot (non-empty, encoded
-	// with the negotiated version).
+	// with the negotiated version), keyed by the character id and
+	// carrying the templateId.
 	env, msg := decodeFrame(t, srv, nextFrame(t, frames))
 	if env.Version != testVersion {
 		t.Errorf("WorldSnapshot envelope version = %d, want %d", env.Version, testVersion)
@@ -263,10 +269,13 @@ func TestEnterWorldRegistersAndSendsRealSnapshot(t *testing.T) {
 	if !ok {
 		t.Fatalf("frame carries %T, want *mmov1.WorldSnapshot", msg)
 	}
-	if len(ws.Entities) != 1 || ws.Entities[0].Id != "alice" {
-		t.Errorf("real WorldSnapshot = %v, want exactly alice", ws.Entities)
+	if len(ws.Entities) != 1 || ws.Entities[0].Id != testCharID {
+		t.Errorf("real WorldSnapshot = %v, want exactly %q", ws.Entities, testCharID)
 	}
 	if ws.Entities[0].Pos == nil || ws.Entities[0].Pos.X != 1 || ws.Entities[0].Pos.Z != 2 {
-		t.Errorf("WorldSnapshot alice pos = %v, want (1, 2)", ws.Entities[0].Pos)
+		t.Errorf("WorldSnapshot char pos = %v, want (1, 2)", ws.Entities[0].Pos)
+	}
+	if ws.Entities[0].TemplateId != "warrior" {
+		t.Errorf("WorldSnapshot templateId = %q, want warrior (design D5)", ws.Entities[0].TemplateId)
 	}
 }

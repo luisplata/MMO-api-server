@@ -17,7 +17,7 @@ func TestSendSnapshot(t *testing.T) {
 	snap := &mmov1.Snapshot{
 		Seq: 42,
 		Entities: []*mmov1.EntityState{
-			{Id: "alice", Pos: &mmov1.Vec3{X: 1, Y: 0, Z: 2}, Velocity: &mmov1.Vec2{X: 3, Z: 4}, Yaw: 0.5},
+			{Id: testCharID, Pos: &mmov1.Vec3{X: 1, Y: 0, Z: 2}, Velocity: &mmov1.Vec2{X: 3, Z: 4}, Yaw: 0.5},
 		},
 	}
 
@@ -36,14 +36,14 @@ func TestSendSnapshot(t *testing.T) {
 		{
 			name: "player without udp peer skipped",
 			setup: func(t *testing.T, srv *Server, sess *session.Session) {
-				addTestPlayer(t, srv, "alice", sess)
+				addTestPlayer(t, srv, testCharID, sess)
 			},
 			want: 0,
 		},
 		{
 			name: "bound player receives datagram",
 			setup: func(t *testing.T, srv *Server, sess *session.Session) {
-				addTestPlayer(t, srv, "alice", sess)
+				addTestPlayer(t, srv, testCharID, sess)
 				if err := sess.HandleUDP(sess.UDPToken(), fakeAddr("10.0.0.1:9000")); err != nil {
 					t.Fatalf("bind: %v", err)
 				}
@@ -58,7 +58,7 @@ func TestSendSnapshot(t *testing.T) {
 			sess := newInWorldSession(t, srv.reg, "alice")
 			tc.setup(t, srv, sess)
 
-			if err := srv.SendSnapshot("alice", snap); err != nil {
+			if err := srv.SendSnapshot(testCharID, snap); err != nil {
 				t.Fatalf("SendSnapshot: %v", err)
 			}
 			pc := srv.udp.(*fakePacketConn)
@@ -91,8 +91,8 @@ func TestSendSnapshot(t *testing.T) {
 			if got.Seq != 42 {
 				t.Errorf("snapshot seq = %d, want 42", got.Seq)
 			}
-			if len(got.Entities) != 1 || got.Entities[0].Id != "alice" || got.Entities[0].Pos.X != 1 {
-				t.Errorf("snapshot entities = %v, want alice at x=1", got.Entities)
+			if len(got.Entities) != 1 || got.Entities[0].Id != testCharID || got.Entities[0].Pos.X != 1 {
+				t.Errorf("snapshot entities = %v, want %s at x=1", got.Entities, testCharID)
 			}
 		})
 	}

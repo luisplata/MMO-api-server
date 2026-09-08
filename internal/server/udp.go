@@ -54,8 +54,10 @@ func (s *Server) routeUDP(payload []byte, addr net.Addr) {
 		}
 		if mi, ok := s.decodeMoveInput(payload); ok {
 			// QueueInput is the sim's concurrency-safe seam; the UDP
-			// handler may feed it from any goroutine.
-			_ = s.sim.QueueInput(sess.PlayerID(), mi)
+			// handler may feed it from any goroutine. The input is queued
+			// for the session's world entity — the selected character id
+			// (design D3), not the account id.
+			_ = s.sim.QueueInput(sess.ActiveCharacterID(), mi)
 		}
 	}
 }

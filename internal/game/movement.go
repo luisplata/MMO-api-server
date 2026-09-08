@@ -11,6 +11,7 @@ package game
 import (
 	"math"
 
+	"github.com/luisplata/mmo-api-server/internal/stats"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
@@ -40,6 +41,16 @@ type Entity struct {
 	Y        float32
 	Velocity Vec2
 	Yaw      float32
+
+	// TemplateID is the character-template id this entity was spawned
+	// from (design D5): the wire EntityState exposes it so the client
+	// picks the visual prefab. The world entity id is the character id,
+	// not the account id (design D3).
+	TemplateID string
+	// Stats is the frozen stats snapshot captured at character creation
+	// (design D2/D5): a template rebalance never silently buffs/nerfs an
+	// existing character. These are data, not hardcoded server constants.
+	Stats stats.Stats
 
 	// LastInputTick/LastInputSeq tag the most recent MoveInput to the
 	// tick that processed it (spec R15) — the hook for future

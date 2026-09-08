@@ -17,6 +17,7 @@ import (
 	"github.com/luisplata/mmo-api-server/internal/game"
 	"github.com/luisplata/mmo-api-server/internal/network"
 	"github.com/luisplata/mmo-api-server/internal/protocol"
+	"github.com/luisplata/mmo-api-server/internal/stats"
 	"github.com/luisplata/mmo-api-server/internal/world"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
@@ -27,7 +28,7 @@ import (
 func addTargetPlayer(t *testing.T, srv *Server, id string) net.Conn {
 	t.Helper()
 	clientConn := mapPlayerWithConn(t, srv, id)
-	if err := srv.sim.RegisterPlayer(id, game.Vec2{}); err != nil {
+	if err := srv.sim.RegisterPlayer(id, game.Vec2{}, "", stats.Stats{}); err != nil {
 		t.Fatalf("RegisterPlayer(%s): %v", id, err)
 	}
 	return clientConn
@@ -54,7 +55,7 @@ func TestFanoutInterest(t *testing.T) {
 		frames := startFrameReader(t, clientConn)
 
 		// Register p2 in the sim; the target p1 sees it → SpawnEvent.
-		if err := srv.sim.RegisterPlayer("p2", game.Vec2{X: 10, Z: 20}); err != nil {
+		if err := srv.sim.RegisterPlayer("p2", game.Vec2{X: 10, Z: 20}, "", stats.Stats{}); err != nil {
 			t.Fatalf("RegisterPlayer: %v", err)
 		}
 		srv.fanoutInterest()
@@ -80,7 +81,7 @@ func TestFanoutInterest(t *testing.T) {
 		clientConn := addTargetPlayer(t, srv, "p1")
 		frames := startFrameReader(t, clientConn)
 
-		if err := srv.sim.RegisterPlayer("p2", game.Vec2{X: 10, Z: 20}); err != nil {
+		if err := srv.sim.RegisterPlayer("p2", game.Vec2{X: 10, Z: 20}, "", stats.Stats{}); err != nil {
 			t.Fatalf("RegisterPlayer: %v", err)
 		}
 		srv.fanoutInterest()
@@ -108,8 +109,8 @@ func TestFanoutInterest(t *testing.T) {
 		clientConn := mapPlayerWithConn(t, srv, "p1")
 		frames := startFrameReader(t, clientConn)
 
-		srv.sim.RegisterPlayer("pGhost", game.Vec2{X: 1, Z: 2}) // first → no event
-		srv.sim.RegisterPlayer("p2", game.Vec2{X: 1, Z: 2})     // SpawnEvent{p2 -> [pGhost]}
+		srv.sim.RegisterPlayer("pGhost", game.Vec2{X: 1, Z: 2}, "", stats.Stats{}) // first → no event
+		srv.sim.RegisterPlayer("p2", game.Vec2{X: 1, Z: 2}, "", stats.Stats{})     // SpawnEvent{p2 -> [pGhost]}
 		srv.fanoutInterest()
 
 		// The event was really emitted and drained...

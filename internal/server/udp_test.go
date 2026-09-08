@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/luisplata/mmo-api-server/internal/game"
+	"github.com/luisplata/mmo-api-server/internal/stats"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
@@ -18,8 +19,8 @@ func TestRouteUDP(t *testing.T) {
 	t.Run("token datagram binds and queues no input", func(t *testing.T) {
 		srv := newTestServer(t)
 		sess := newInWorldSession(t, srv.reg, "alice")
-		addTestPlayer(t, srv, "alice", sess)
-		if err := srv.sim.RegisterPlayer("alice", game.Vec2{}); err != nil {
+		addTestPlayer(t, srv, testCharID, sess)
+		if err := srv.sim.RegisterPlayer(testCharID, game.Vec2{}, "", stats.Stats{}); err != nil {
 			t.Fatalf("RegisterPlayer: %v", err)
 		}
 		addr := fakeAddr("10.0.0.1:9000")
@@ -35,7 +36,7 @@ func TestRouteUDP(t *testing.T) {
 		if err := srv.sim.Step(); err != nil {
 			t.Fatalf("Step: %v", err)
 		}
-		e, _ := srv.sim.Entity("alice")
+		e, _ := srv.sim.Entity(testCharID)
 		if e.Pos.X != 0 || e.Pos.Z != 0 {
 			t.Errorf("bind datagram must not queue input; entity moved to %v", e.Pos)
 		}
@@ -44,8 +45,8 @@ func TestRouteUDP(t *testing.T) {
 	t.Run("move input from bound peer moves the entity", func(t *testing.T) {
 		srv := newTestServer(t)
 		sess := newInWorldSession(t, srv.reg, "alice")
-		addTestPlayer(t, srv, "alice", sess)
-		if err := srv.sim.RegisterPlayer("alice", game.Vec2{}); err != nil {
+		addTestPlayer(t, srv, testCharID, sess)
+		if err := srv.sim.RegisterPlayer(testCharID, game.Vec2{}, "", stats.Stats{}); err != nil {
 			t.Fatalf("RegisterPlayer: %v", err)
 		}
 		addr := fakeAddr("10.0.0.1:9000")
@@ -59,7 +60,7 @@ func TestRouteUDP(t *testing.T) {
 		if err := srv.sim.Step(); err != nil {
 			t.Fatalf("Step: %v", err)
 		}
-		e, _ := srv.sim.Entity("alice")
+		e, _ := srv.sim.Entity(testCharID)
 		if !almostEqual(e.Pos.X, 0.25) {
 			t.Errorf("pos.X = %v, want ~0.25 (speed 5 * 50ms dt)", e.Pos.X)
 		}
@@ -74,8 +75,8 @@ func TestRouteUDP(t *testing.T) {
 	t.Run("garbage datagram ignored", func(t *testing.T) {
 		srv := newTestServer(t)
 		sess := newInWorldSession(t, srv.reg, "alice")
-		addTestPlayer(t, srv, "alice", sess)
-		if err := srv.sim.RegisterPlayer("alice", game.Vec2{}); err != nil {
+		addTestPlayer(t, srv, testCharID, sess)
+		if err := srv.sim.RegisterPlayer(testCharID, game.Vec2{}, "", stats.Stats{}); err != nil {
 			t.Fatalf("RegisterPlayer: %v", err)
 		}
 		addr := fakeAddr("10.0.0.1:9000")
@@ -86,7 +87,7 @@ func TestRouteUDP(t *testing.T) {
 		if err := srv.sim.Step(); err != nil {
 			t.Fatalf("Step: %v", err)
 		}
-		e, _ := srv.sim.Entity("alice")
+		e, _ := srv.sim.Entity(testCharID)
 		if e.Pos.X != 0 || e.Pos.Z != 0 {
 			t.Errorf("garbage must be ignored; entity moved to %v", e.Pos)
 		}
@@ -95,8 +96,8 @@ func TestRouteUDP(t *testing.T) {
 	t.Run("input from foreign peer ignored", func(t *testing.T) {
 		srv := newTestServer(t)
 		sess := newInWorldSession(t, srv.reg, "alice")
-		addTestPlayer(t, srv, "alice", sess)
-		if err := srv.sim.RegisterPlayer("alice", game.Vec2{}); err != nil {
+		addTestPlayer(t, srv, testCharID, sess)
+		if err := srv.sim.RegisterPlayer(testCharID, game.Vec2{}, "", stats.Stats{}); err != nil {
 			t.Fatalf("RegisterPlayer: %v", err)
 		}
 		srv.routeUDP(sess.UDPToken(), fakeAddr("10.0.0.1:9000")) // bound peer A
@@ -109,7 +110,7 @@ func TestRouteUDP(t *testing.T) {
 		if err := srv.sim.Step(); err != nil {
 			t.Fatalf("Step: %v", err)
 		}
-		e, _ := srv.sim.Entity("alice")
+		e, _ := srv.sim.Entity(testCharID)
 		if e.Pos.X != 0 || e.Pos.Z != 0 {
 			t.Errorf("foreign peer input must be ignored (S13.2); entity moved to %v", e.Pos)
 		}

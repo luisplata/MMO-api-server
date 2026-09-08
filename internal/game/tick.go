@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/luisplata/mmo-api-server/internal/stats"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 
 	"github.com/luisplata/mmo-api-server/internal/world"
@@ -155,15 +156,16 @@ func (s *Simulation) Entity(id string) (*Entity, bool) {
 	return e, ok
 }
 
-// RegisterPlayer spawns a new player at the given position (design D3:
-// player spawning at spawnPos), tracking its interest cell. The entity's
-// derived Y is resolved from the terrain at the spawn point (design D4,
-// spec CTH-3). It fails on a duplicate id.
-func (s *Simulation) RegisterPlayer(id string, spawn Vec2) error {
+// RegisterPlayer spawns a new player at the given position (design D3/D5:
+// the world entity id is the selected character id, and the entity
+// carries the template id + frozen stats snapshot), tracking its interest
+// cell. The entity's derived Y is resolved from the terrain at the spawn
+// point (design D4, spec CTH-3). It fails on a duplicate id.
+func (s *Simulation) RegisterPlayer(id string, spawn Vec2, templateID string, st stats.Stats) error {
 	if _, ok := s.players[id]; ok {
 		return ErrDuplicatePlayer
 	}
-	s.players[id] = &Entity{ID: id, Pos: spawn, Y: s.spawnHeight(spawn)}
+	s.players[id] = &Entity{ID: id, Pos: spawn, Y: s.spawnHeight(spawn), TemplateID: templateID, Stats: st}
 	s.order = append(s.order, id)
 	s.events = append(s.events, s.tracker.Update(id, spawn.X, spawn.Z)...)
 	return nil

@@ -53,16 +53,18 @@ type SnapshotAssembler interface {
 	Assemble(seq uint32, entities []*Entity) *mmov1.Snapshot
 }
 
-// entityState maps one entity to its wire state (design D3, spec S16.1):
-// ground-plane position as a v2 Vec3 whose Y is the derived terrain
-// height (spec CTH-1/CTH-5), velocity, and yaw — nothing else. Shared
-// by the snapshot assembler and the enter-world WorldSnapshot.
+// entityState maps one entity to its wire state (design D3/D5, spec
+// S16.1): ground-plane position as a v2 Vec3 whose Y is the derived
+// terrain height (spec CTH-1/CTH-5), velocity, yaw and the entity's
+// templateId — nothing else. Shared by the snapshot assembler and the
+// enter-world WorldSnapshot.
 func entityState(e *Entity) *mmov1.EntityState {
 	return &mmov1.EntityState{
-		Id:       e.ID,
-		Pos:      &mmov1.Vec3{X: e.Pos.X, Y: e.Y, Z: e.Pos.Z},
-		Velocity: &mmov1.Vec2{X: e.Velocity.X, Z: e.Velocity.Z},
-		Yaw:      e.Yaw,
+		Id:         e.ID,
+		Pos:        &mmov1.Vec3{X: e.Pos.X, Y: e.Y, Z: e.Pos.Z},
+		Velocity:   &mmov1.Vec2{X: e.Velocity.X, Z: e.Velocity.Z},
+		Yaw:        e.Yaw,
+		TemplateId: e.TemplateID,
 	}
 }
 

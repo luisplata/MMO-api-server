@@ -494,8 +494,9 @@ func requireUDP[T proto.Message](t *testing.T, c *client, what string, opt ...fu
 // CreateCharacterResponse, SelectCharacter→SelectCharacterResponse (the
 // resolved spawn), EnterWorld→empty ack WorldSnapshot→REAL WorldSnapshot
 // carrying the current world. It returns the AuthResponse (identity,
-// token), the selected character's spawn, and the real WorldSnapshot.
-func (c *client) enterWorld(t *testing.T, username string) (*mmov1.AuthResponse, *mmov1.Vec3, *mmov1.WorldSnapshot) {
+// token), the selected character's spawn, the selected CHARACTER id (the
+// world entity id, design D3), and the real WorldSnapshot.
+func (c *client) enterWorld(t *testing.T, username string) (*mmov1.AuthResponse, *mmov1.Vec3, string, *mmov1.WorldSnapshot) {
 	t.Helper()
 
 	c.sendTCP(t, &mmov1.Hello{ProtoVer: protoVersion})
@@ -535,7 +536,11 @@ func (c *client) enterWorld(t *testing.T, username string) (*mmov1.AuthResponse,
 	if cc.Character == nil {
 		t.Fatalf("%s: CreateCharacterResponse.Character is nil", c.name)
 	}
-	c.sendTCP(t, &mmov1.SelectCharacter{CharacterId: cc.Character.Id})
+	charID := cc.Character.Id
+	if charID == "" {
+		t.Fatalf("%s: CreateCharacterResponse.Character.Id is empty", c.name)
+	}
+	c.sendTCP(t, &mmov1.SelectCharacter{CharacterId: charID})
 	sc := requireTCP[*mmov1.SelectCharacterResponse](t, c, "SelectCharacterResponse", func(sc *mmov1.SelectCharacterResponse) bool {
 		return sc.Ok
 	})
@@ -558,10 +563,12 @@ func (c *client) enterWorld(t *testing.T, username string) (*mmov1.AuthResponse,
 	ws := requireTCP[*mmov1.WorldSnapshot](t, c, "real WorldSnapshot", func(ws *mmov1.WorldSnapshot) bool {
 		return len(ws.Entities) > 0
 	})
-	if findEntity(ws.Entities, username) == nil {
-		t.Fatalf("%s: real WorldSnapshot does not contain %q: %v", c.name, username, entityIDs(ws.Entities))
+	// Design D3: the world entity id is the CHARACTER id, not the account
+	// id. The real WorldSnapshot must carry the character.
+	if findEntity(ws.Entities, charID) == nil {
+		t.Fatalf("%s: real WorldSnapshot does not contain character %q (entity id): %v", c.name, charID, entityIDs(ws.Entities))
 	}
-	return ar, sc.SpawnPos, ws
+	return ar, sc.SpawnPos, charID, ws
 }
 
 // findEntity returns the entity state for id, or nil.
@@ -596,22 +603,22 @@ func TestTwoPlayersSeeEachOtherMoveEndToEnd(t *testing.T) {
 	reg := protocol.NewWorldRegistry()
 
 	a := newClient(t, reg, tcpAddr, udpAddr, "alice")
-	arA, spawnA, _ := a.enterWorld(t, "alice")
+	arA, spawnA, charIDA, _ := a.enterWorld(t, "alice")
 
 	b := newClient(t, reg, tcpAddr, udpAddr, "bob")
-	arB, _, wsB := b.enterWorld(t, "bob")
+	arB, _, charIDB, wsB := b.enterWorld(t, "bob")
 
-	// B's real WorldSnapshot (full state) already contains alice, who
-	// entered first — B sees A over TCP before A ever moves.
-	if e := findEntity(wsB.Entities, "alice"); e == nil {
-		t.Fatalf("bob: real WorldSnapshot lacks alice: %v", entityIDs(wsB.Entities))
+	// B's real WorldSnapshot (full state) already contains A's character,
+	// which entered first — B sees A over TCP before A ever moves.
+	if e := findEntity(wsB.Entities, charIDA); e == nil {
+		t.Fatalf("bob: real WorldSnapshot lacks %q (A's character): %v", charIDA, entityIDs(wsB.Entities))
 	}
 
-	// Interest fanout over TCP (spec S18.2, design D4): alice is notified
-	// that bob spawned — the flat resolver announces the newcomer to
-	// everyone else.
-	requireTCP[*mmov1.SpawnEntity](t, a, "SpawnEntity bob", func(sp *mmov1.SpawnEntity) bool {
-		return sp.EntityId == "bob"
+	// Interest fanout over TCP (spec S18.2, design D4): A is notified
+	// that B's character spawned — the flat resolver announces the
+	// newcomer to everyone else.
+	requireTCP[*mmov1.SpawnEntity](t, a, "SpawnEntity B", func(sp *mmov1.SpawnEntity) bool {
+		return sp.EntityId == charIDB
 	})
 
 	// Both clients bind their UDP peer with the raw token (spec R13).
@@ -622,9 +629,9 @@ func TestTwoPlayersSeeEachOtherMoveEndToEnd(t *testing.T) {
 	// the spawn position with yaw 0 — proves the UDP pipeline end-to-end
 	// and pins the pre-move state.
 	first := requireUDP[*mmov1.Snapshot](t, b, "first snapshot")
-	alice0 := findEntity(first.Entities, "alice")
+	alice0 := findEntity(first.Entities, charIDA)
 	if alice0 == nil {
-		t.Fatalf("bob: first snapshot lacks alice: %v", entityIDs(first.Entities))
+		t.Fatalf("bob: first snapshot lacks %q (A's character): %v", charIDA, entityIDs(first.Entities))
 	}
 	if alice0.Pos == nil || alice0.Pos.X != spawnA.X || alice0.Pos.Z != spawnA.Z {
 		t.Errorf("bob: alice before moving = pos %v, want spawn (%v, %v)", alice0.Pos, spawnA.X, spawnA.Z)
@@ -644,11 +651,11 @@ func TestTwoPlayersSeeEachOtherMoveEndToEnd(t *testing.T) {
 
 	// THE GATE (spec S20.1): B observes A's NEW position and yaw in a
 	// Snapshot over UDP within the broadcast cadence (bounded 5 s).
-	moved := requireUDP[*mmov1.Snapshot](t, b, "snapshot showing alice moved", func(sn *mmov1.Snapshot) bool {
-		e := findEntity(sn.Entities, "alice")
+	moved := requireUDP[*mmov1.Snapshot](t, b, "snapshot showing A moved", func(sn *mmov1.Snapshot) bool {
+		e := findEntity(sn.Entities, charIDA)
 		return e != nil && e.Pos != nil && e.Pos.X > spawnA.X+0.1 && e.Yaw == moveYaw
 	})
-	alice1 := findEntity(moved.Entities, "alice")
+	alice1 := findEntity(moved.Entities, charIDA)
 	if alice1.Pos.X <= spawnA.X {
 		t.Errorf("bob: alice did not advance: pos = %v, spawn X = %v", alice1.Pos, spawnA.X)
 	}
@@ -680,13 +687,14 @@ func TestChannelSeparationAndNoKCPWrapper(t *testing.T) {
 
 	reg := protocol.NewWorldRegistry()
 	a := newClient(t, reg, tcpAddr, udpAddr, "alice")
-	arA, _, _ := a.enterWorld(t, "alice")
+	arA, _, _, _ := a.enterWorld(t, "alice")
 	b := newClient(t, reg, tcpAddr, udpAddr, "bob")
-	arB, _, _ := b.enterWorld(t, "bob")
+	arB, _, charIDB, _ := b.enterWorld(t, "bob")
 
-	// Lifecycle + interest over TCP: alice is notified that bob spawned.
-	requireTCP[*mmov1.SpawnEntity](t, a, "SpawnEntity bob", func(sp *mmov1.SpawnEntity) bool {
-		return sp.EntityId == "bob"
+	// Lifecycle + interest over TCP: A is notified that B's character
+	// spawned (design D3 — the fanout uses the character id).
+	requireTCP[*mmov1.SpawnEntity](t, a, "SpawnEntity B", func(sp *mmov1.SpawnEntity) bool {
+		return sp.EntityId == charIDB
 	})
 
 	// Exercise the real-time channel: A binds then sends MoveInput over

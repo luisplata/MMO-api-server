@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/luisplata/mmo-api-server/internal/stats"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 
 	"github.com/luisplata/mmo-api-server/internal/world"
@@ -118,7 +119,7 @@ func TestAccumulator(t *testing.T) {
 // and closing it gives a deterministic completion barrier.
 func TestSimulationCadence(t *testing.T) {
 	sim := newSim(t, nil)
-	sim.RegisterPlayer("p1", Vec2{0, 0})
+	sim.RegisterPlayer("p1", Vec2{0, 0}, "", stats.Stats{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -151,7 +152,7 @@ func TestSimulationCadence(t *testing.T) {
 // context cancellation (graceful shutdown path for the wiring layer).
 func TestSimulationRunStopsOnCancel(t *testing.T) {
 	sim := newSim(t, nil)
-	sim.RegisterPlayer("p1", Vec2{0, 0})
+	sim.RegisterPlayer("p1", Vec2{0, 0}, "", stats.Stats{})
 	wake := make(chan time.Time)
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -181,10 +182,10 @@ func TestSimulationRunStopsOnCancel(t *testing.T) {
 func TestSimulationDeterminism(t *testing.T) {
 	run := func() *Simulation {
 		sim := newSim(t, nil)
-		if err := sim.RegisterPlayer("p1", Vec2{0, 0}); err != nil {
+		if err := sim.RegisterPlayer("p1", Vec2{0, 0}, "", stats.Stats{}); err != nil {
 			t.Fatalf("RegisterPlayer p1: %v", err)
 		}
-		if err := sim.RegisterPlayer("p2", Vec2{10, -10}); err != nil {
+		if err := sim.RegisterPlayer("p2", Vec2{10, -10}, "", stats.Stats{}); err != nil {
 			t.Fatalf("RegisterPlayer p2: %v", err)
 		}
 		inputs := []*mmov1.MoveInput{
@@ -217,7 +218,7 @@ func TestSimulationDeterminism(t *testing.T) {
 
 func TestSimulationMoveApplied(t *testing.T) {
 	sim := newSim(t, nil)
-	if err := sim.RegisterPlayer("p1", Vec2{0, 0}); err != nil {
+	if err := sim.RegisterPlayer("p1", Vec2{0, 0}, "", stats.Stats{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := sim.QueueInput("p1", move(1, 0, 5, 1)); err != nil {
@@ -251,7 +252,7 @@ func TestSimulationMoveApplied(t *testing.T) {
 
 func TestSimulationOverSpeedClamped(t *testing.T) {
 	sim := newSim(t, nil) // DefaultMaxSpeed = 10
-	if err := sim.RegisterPlayer("p1", Vec2{0, 0}); err != nil {
+	if err := sim.RegisterPlayer("p1", Vec2{0, 0}, "", stats.Stats{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := sim.QueueInput("p1", move(1, 0, 999, 1)); err != nil {
@@ -271,7 +272,7 @@ func TestSimulationOverSpeedClamped(t *testing.T) {
 
 func TestSimulationCustomMaxSpeed(t *testing.T) {
 	sim := newSim(t, func(c *SimulationConfig) { c.MaxSpeed = 5 })
-	if err := sim.RegisterPlayer("p1", Vec2{0, 0}); err != nil {
+	if err := sim.RegisterPlayer("p1", Vec2{0, 0}, "", stats.Stats{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := sim.QueueInput("p1", move(1, 0, 999, 1)); err != nil {
@@ -293,8 +294,8 @@ func TestSimulationCustomMaxSpeed(t *testing.T) {
 func TestSimulationSnapshotStagger(t *testing.T) {
 	sink := &recordingSink{}
 	sim := newSim(t, func(c *SimulationConfig) { c.Sink = sink })
-	sim.RegisterPlayer("p1", Vec2{0, 0})
-	sim.RegisterPlayer("p2", Vec2{10, 0})
+	sim.RegisterPlayer("p1", Vec2{0, 0}, "", stats.Stats{})
+	sim.RegisterPlayer("p2", Vec2{10, 0}, "", stats.Stats{})
 
 	for i := 0; i < 40; i++ {
 		if err := sim.Step(); err != nil {
@@ -339,8 +340,8 @@ func TestSimulationSnapshotStagger(t *testing.T) {
 func TestSimulationSnapshotCarriesFullState(t *testing.T) {
 	sink := &recordingSink{}
 	sim := newSim(t, func(c *SimulationConfig) { c.Sink = sink })
-	sim.RegisterPlayer("p1", Vec2{0, 0})
-	sim.RegisterPlayer("p2", Vec2{10, -2})
+	sim.RegisterPlayer("p1", Vec2{0, 0}, "", stats.Stats{})
+	sim.RegisterPlayer("p2", Vec2{10, -2}, "", stats.Stats{})
 	sim.QueueInput("p1", move(1, 0, 5, 1))
 
 	for i := 0; i < 4; i++ {
@@ -372,7 +373,7 @@ func TestSimulationSnapshotCarriesFullState(t *testing.T) {
 func TestSimulationServerCorrection(t *testing.T) {
 	sink := &recordingSink{}
 	sim := newSim(t, func(c *SimulationConfig) { c.Sink = sink })
-	sim.RegisterPlayer("p1", Vec2{0, 0})
+	sim.RegisterPlayer("p1", Vec2{0, 0}, "", stats.Stats{})
 	// Client sends a non-normalized direction with absurd speed: the
 	// server must clamp to max speed and normalize the direction.
 	sim.QueueInput("p1", &mmov1.MoveInput{Seq: 1, Dir: &mmov1.Vec2{X: 30, Z: 40}, Speed: 999, Yaw: 0.7})
@@ -401,12 +402,12 @@ func TestSimulationInterestEvents(t *testing.T) {
 	if events := sim.TakeInterestEvents(); len(events) != 0 {
 		t.Fatalf("fresh sim events = %v, want none", events)
 	}
-	sim.RegisterPlayer("p1", Vec2{0, 0})
+	sim.RegisterPlayer("p1", Vec2{0, 0}, "", stats.Stats{})
 	if events := sim.TakeInterestEvents(); len(events) != 0 {
 		t.Fatalf("first join events = %v, want none", events)
 	}
 	// p2 joins -> p1 must spawn p2 (v1 flat).
-	sim.RegisterPlayer("p2", Vec2{10, 10})
+	sim.RegisterPlayer("p2", Vec2{10, 10}, "", stats.Stats{})
 	events := sim.TakeInterestEvents()
 	if len(events) != 1 {
 		t.Fatalf("join events = %v, want 1 spawn", events)
@@ -443,10 +444,10 @@ func TestSimulationQueueInputErrors(t *testing.T) {
 	if err := sim.QueueInput("ghost", move(1, 0, 5, 1)); err == nil {
 		t.Error("QueueInput for unknown player must error")
 	}
-	if err := sim.RegisterPlayer("p1", Vec2{0, 0}); err != nil {
+	if err := sim.RegisterPlayer("p1", Vec2{0, 0}, "", stats.Stats{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sim.RegisterPlayer("p1", Vec2{5, 5}); err == nil {
+	if err := sim.RegisterPlayer("p1", Vec2{5, 5}, "", stats.Stats{}); err == nil {
 		t.Error("duplicate RegisterPlayer must error")
 	}
 	if err := sim.RemovePlayer("ghost"); err == nil {
@@ -459,7 +460,7 @@ func TestSimulationQueueInputErrors(t *testing.T) {
 
 func TestSimulationInputTaggedToTick(t *testing.T) {
 	sim := newSim(t, nil)
-	sim.RegisterPlayer("p1", Vec2{0, 0})
+	sim.RegisterPlayer("p1", Vec2{0, 0}, "", stats.Stats{})
 	sim.QueueInput("p1", &mmov1.MoveInput{Seq: 5, Dir: &mmov1.Vec2{X: 1}, Speed: 5, Yaw: 0})
 	if err := sim.Step(); err != nil { // processes tick 0
 		t.Fatal(err)
@@ -478,8 +479,8 @@ func TestSimulationInputTaggedToTick(t *testing.T) {
 
 func TestSimulationWorldSnapshot(t *testing.T) {
 	sim := newSim(t, nil)
-	sim.RegisterPlayer("p1", Vec2{1, 2})
-	sim.RegisterPlayer("p2", Vec2{-3, 4})
+	sim.RegisterPlayer("p1", Vec2{1, 2}, "", stats.Stats{})
+	sim.RegisterPlayer("p2", Vec2{-3, 4}, "", stats.Stats{})
 	sim.QueueInput("p1", move(1, 0, 5, 1))
 	for i := 0; i < 3; i++ {
 		if err := sim.Step(); err != nil {
@@ -515,7 +516,7 @@ func TestSimulationYFollowsTerrain(t *testing.T) {
 		t.Fatalf("DefaultHeightfield: %v", err)
 	}
 	sim := newSim(t, func(c *SimulationConfig) { c.Heights = heights })
-	if err := sim.RegisterPlayer("p1", Vec2{100, 200}); err != nil {
+	if err := sim.RegisterPlayer("p1", Vec2{100, 200}, "", stats.Stats{}); err != nil {
 		t.Fatal(err)
 	}
 	e, _ := sim.Entity("p1")
@@ -549,7 +550,7 @@ func TestSimulationYFollowsTerrain(t *testing.T) {
 // default.
 func TestSimulationFlatYWithoutResolver(t *testing.T) {
 	sim := newSim(t, nil)
-	sim.RegisterPlayer("p1", Vec2{100, 200})
+	sim.RegisterPlayer("p1", Vec2{100, 200}, "", stats.Stats{})
 	sim.QueueInput("p1", move(1, 0, 5, 1))
 	for i := 0; i < 4; i++ {
 		if err := sim.Step(); err != nil {
@@ -572,7 +573,7 @@ func TestSimulationRegisterResolvesSpawnY(t *testing.T) {
 		t.Fatalf("DefaultHeightfield: %v", err)
 	}
 	sim := newSim(t, func(c *SimulationConfig) { c.Heights = heights })
-	if err := sim.RegisterPlayer("p1", Vec2{100, 200}); err != nil {
+	if err := sim.RegisterPlayer("p1", Vec2{100, 200}, "", stats.Stats{}); err != nil {
 		t.Fatal(err)
 	}
 	e, _ := sim.Entity("p1")
@@ -580,7 +581,7 @@ func TestSimulationRegisterResolvesSpawnY(t *testing.T) {
 		t.Errorf("spawn Y on the hill = %v, want 25", e.Y)
 	}
 	// A flat-ground spawn resolves to 0.
-	if err := sim.RegisterPlayer("p2", Vec2{0, 0}); err != nil {
+	if err := sim.RegisterPlayer("p2", Vec2{0, 0}, "", stats.Stats{}); err != nil {
 		t.Fatal(err)
 	}
 	e2, _ := sim.Entity("p2")
@@ -599,7 +600,7 @@ func TestSimulationInputNeverSetsY(t *testing.T) {
 		t.Fatalf("DefaultHeightfield: %v", err)
 	}
 	sim := newSim(t, func(c *SimulationConfig) { c.Heights = heights })
-	sim.RegisterPlayer("p1", Vec2{100, 200})
+	sim.RegisterPlayer("p1", Vec2{100, 200}, "", stats.Stats{})
 	sim.QueueInput("p1", &mmov1.MoveInput{Seq: 1, Dir: &mmov1.Vec2{X: 1, Z: 0}, Speed: 5, Yaw: 1.5})
 	if err := sim.Step(); err != nil {
 		t.Fatal(err)
@@ -621,10 +622,10 @@ func TestSimulationDeterminismOnHills(t *testing.T) {
 			t.Fatalf("DefaultHeightfield: %v", err)
 		}
 		sim := newSim(t, func(c *SimulationConfig) { c.Heights = heights })
-		if err := sim.RegisterPlayer("p1", Vec2{100, 200}); err != nil {
+		if err := sim.RegisterPlayer("p1", Vec2{100, 200}, "", stats.Stats{}); err != nil {
 			t.Fatalf("RegisterPlayer p1: %v", err)
 		}
-		if err := sim.RegisterPlayer("p2", Vec2{60, 240}); err != nil {
+		if err := sim.RegisterPlayer("p2", Vec2{60, 240}, "", stats.Stats{}); err != nil {
 			t.Fatalf("RegisterPlayer p2: %v", err)
 		}
 		inputs := []*mmov1.MoveInput{

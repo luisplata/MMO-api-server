@@ -15,6 +15,7 @@ import (
 	"github.com/luisplata/mmo-api-server/internal/game"
 	"github.com/luisplata/mmo-api-server/internal/network"
 	"github.com/luisplata/mmo-api-server/internal/protocol"
+	"github.com/luisplata/mmo-api-server/internal/stats"
 	"github.com/luisplata/mmo-api-server/internal/world"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
@@ -82,12 +83,14 @@ func (s *Server) runSim(ctx context.Context, wake <-chan time.Time) error {
 }
 
 // registerAndSnapshot runs on the sim-owner goroutine (via simDo) so
-// RegisterPlayer and AssembleWorldSnapshot never race Step. It returns
-// the encoded REAL WorldSnapshot the caller writes over the TCP conn.
-func (s *Server) registerAndSnapshot(ctx context.Context, pid string, spawn game.Vec2, version uint16) ([]byte, error) {
+// RegisterPlayer and AssembleWorldSnapshot never race Step. It registers
+// the player by its ENTITY id (the selected character id, design D3)
+// with its template id + frozen stats, and returns the encoded REAL
+// WorldSnapshot the caller writes over the TCP conn.
+func (s *Server) registerAndSnapshot(ctx context.Context, id string, spawn game.Vec2, templateID string, st stats.Stats, version uint16) ([]byte, error) {
 	var frame []byte
 	err := s.simDo(ctx, func() error {
-		if err := s.sim.RegisterPlayer(pid, spawn); err != nil {
+		if err := s.sim.RegisterPlayer(id, spawn, templateID, st); err != nil {
 			return err
 		}
 		ws := s.sim.AssembleWorldSnapshot()

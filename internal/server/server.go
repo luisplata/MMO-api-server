@@ -129,7 +129,7 @@ func New(cfg Config) (*Server, error) {
 	srv := &Server{
 		cfg:        cfg,
 		reg:        protocol.NewWorldRegistry(),
-		auth:       devAuthenticator{enabled: cfg.DevAuth, spawn: game.Vec2{X: cfg.SpawnX, Z: cfg.SpawnZ}, heights: cfg.Heights},
+		auth:       devAuthenticator{enabled: cfg.DevAuth},
 		templates:  cfg.Templates,
 		characters: cfg.Characters,
 		players:    make(map[string]*player),
@@ -269,12 +269,12 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		if err := sess.HandleTCP(frame); err != nil {
 			return // protocol violation — the session already closed itself
 		}
-		pid := sess.PlayerID()
-		if sess.State() == session.StateInWorld && pid != "" && !s.isRegistered(pid) {
+		cid := sess.ActiveCharacterID()
+		if sess.State() == session.StateInWorld && cid != "" && !s.isRegistered(cid) {
 			if err := s.enterWorld(ctx, conn, sess, tr); err != nil {
-				// Join failed (e.g. duplicate player id): drop the
+				// Join failed (e.g. duplicate character id): drop the
 				// connection so the client can retry cleanly.
-				log.Printf("server: player %q join failed: %v", pid, err)
+				log.Printf("server: character %q join failed: %v", cid, err)
 				return
 			}
 		}
@@ -282,17 +282,18 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 }
 
 // cleanupConn tears down a session: the session closes its transport
-// (which closes the conn), the player is removed from the simulation
-// (emitting its despawn event) and dropped from the server map.
+// (which closes the conn), the world entity (the selected character id,
+// design D3) is removed from the simulation (emitting its despawn event)
+// and dropped from the server map.
 func (s *Server) cleanupConn(ctx context.Context, conn net.Conn, sess *session.Session) {
-	pid := sess.PlayerID()
+	cid := sess.ActiveCharacterID()
 	_ = sess.Close()
-	if pid != "" {
-		// RemovePlayer is a no-op for players that never joined and
+	if cid != "" {
+		// RemovePlayer is a no-op for entities that never joined and
 		// returns ctx.Err during shutdown — both are benign.
-		_ = s.simDo(ctx, func() error { return s.sim.RemovePlayer(pid) })
+		_ = s.simDo(ctx, func() error { return s.sim.RemovePlayer(cid) })
 		s.mu.Lock()
-		delete(s.players, pid)
+		delete(s.players, cid)
 		s.mu.Unlock()
 	}
 	_ = conn.Close()
@@ -314,26 +315,36 @@ func (s *Server) isRegistered(pid string) bool {
 // state); this real one follows and carries the current world state, so
 // the client's first authoritative view is non-empty.
 func (s *Server) enterWorld(ctx context.Context, conn net.Conn, sess *session.Session, tr network.Transport) error {
-	pid := sess.PlayerID()
-	s.mu.Lock()
-	if _, dup := s.players[pid]; dup {
-		s.mu.Unlock()
-		return fmt.Errorf("server: player %q already connected", pid)
+	// World entity identity = the selected character id (design D3), not
+	// the account id. The session only reaches in-world via a valid
+	// SelectCharacter, so the active character + its spawn are resolved.
+	cid := sess.ActiveCharacterID()
+	if cid == "" {
+		return fmt.Errorf("server: no active character selected")
 	}
-	s.players[pid] = &player{sess: sess, tr: tr, tcp: conn}
-	s.mu.Unlock()
-
-	// Design D4: the spawn comes from the selected character (resolved at
-	// SelectCharacter); fall back to the auth spawn for the pre-select
-	// path. The sim re-resolves the terrain height authoritatively.
+	char := sess.ActiveCharacter()
+	if char == nil {
+		return fmt.Errorf("server: no active character selected")
+	}
 	spawn := sess.CharacterSpawn()
 	if spawn == nil {
-		spawn = sess.SpawnPos()
+		return fmt.Errorf("server: no character spawn resolved")
 	}
-	frame, err := s.registerAndSnapshot(ctx, pid, spawnFromProto(spawn), sess.WireVersion())
+	s.mu.Lock()
+	if _, dup := s.players[cid]; dup {
+		s.mu.Unlock()
+		return fmt.Errorf("server: character %q already connected", cid)
+	}
+	s.players[cid] = &player{sess: sess, tr: tr, tcp: conn}
+	s.mu.Unlock()
+
+	// Design D4/D5: the entity registers at the character spawn with the
+	// character's template id + frozen stats snapshot. The sim re-resolves
+	// the terrain height authoritatively.
+	frame, err := s.registerAndSnapshot(ctx, cid, spawnFromProto(spawn), char.TemplateID, char.Stats, sess.WireVersion())
 	if err != nil {
 		s.mu.Lock()
-		delete(s.players, pid)
+		delete(s.players, cid)
 		s.mu.Unlock()
 		return err
 	}

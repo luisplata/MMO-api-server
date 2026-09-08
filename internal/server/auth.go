@@ -1,31 +1,28 @@
 package server
 
-// v1 dev-mode authentication (spec R12, design PR4b point 3): the seam
-// is the deliverable — a real backend slots in later without touching
-// the session layer. Enabled accepts any credentials and returns the
-// username as the player id with a fixed spawn; disabled rejects
-// everything as a placeholder.
+// v1 dev-mode authentication (spec R12, design PR4b point 3, D4): the
+// seam is the deliverable — a real backend slots in later without
+// touching the session layer. Enabled accepts any credentials and
+// returns the username as the ACCOUNT id; disabled rejects everything as
+// a placeholder. Auth resolves only the account identity: the spawn
+// position is NOT resolved here — it is resolved by SelectCharacter in
+// the selecting phase (design D4), so Authenticate returns a nil spawn.
 
 import (
 	"errors"
 
-	"github.com/luisplata/mmo-api-server/internal/game"
-	"github.com/luisplata/mmo-api-server/internal/world"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
 // devAuthenticator is the v1 development authenticator.
 type devAuthenticator struct {
 	enabled bool
-	spawn   game.Vec2
-	// heights supplies the terrain sampler for the spawn Y (design D4,
-	// spec CTH-3); nil keeps the flat Y=0 default.
-	heights world.HeightResolver
 }
 
-// Authenticate implements session.Authenticator. The returned spawn is
-// a v2 Vec3 whose Y is the terrain height at the spawn point, resolved
-// from the active map (spec CTH-3); with no resolver wired it is 0.
+// Authenticate implements session.Authenticator. It returns the account
+// id (the username) for valid credentials and a NIL spawn — design D4
+// moved spawn resolution to SelectCharacter, so the session never
+// consumes a spawn from auth.
 func (d devAuthenticator) Authenticate(username, password string) (string, *mmov1.Vec3, error) {
 	if !d.enabled {
 		return "", nil, errors.New("server: authentication disabled (real auth pending)")
@@ -33,14 +30,5 @@ func (d devAuthenticator) Authenticate(username, password string) (string, *mmov
 	if username == "" {
 		return "", nil, errors.New("server: empty username")
 	}
-	return username, &mmov1.Vec3{X: d.spawn.X, Y: d.spawnHeight(), Z: d.spawn.Z}, nil
-}
-
-// spawnHeight resolves the terrain height at the configured spawn point,
-// or 0 when no resolver is wired (flat default).
-func (d devAuthenticator) spawnHeight() float32 {
-	if d.heights == nil {
-		return 0
-	}
-	return d.heights.HeightAt(d.spawn.X, d.spawn.Z)
+	return username, nil, nil
 }

@@ -44,12 +44,14 @@ func isBindToken(payload, token []byte) bool {
 // a mirror of internal/game's unexported entityState, needed here for
 // the interest fanout's SpawnEntity.State. Ground-plane position as a
 // v2 Vec3 whose Y is the derived terrain height (spec CTH-1/CTH-5),
-// velocity and yaw only (design D3, spec S16.1).
+// velocity, yaw and the entity's templateId (design D5), so the client
+// picks the visual prefab for a spawned character.
 func entityStateFromGame(e *game.Entity) *mmov1.EntityState {
 	return &mmov1.EntityState{
-		Id:       e.ID,
-		Pos:      &mmov1.Vec3{X: e.Pos.X, Y: e.Y, Z: e.Pos.Z},
-		Velocity: &mmov1.Vec2{X: e.Velocity.X, Z: e.Velocity.Z},
-		Yaw:      e.Yaw,
+		Id:         e.ID,
+		Pos:        &mmov1.Vec3{X: e.Pos.X, Y: e.Y, Z: e.Pos.Z},
+		Velocity:   &mmov1.Vec2{X: e.Velocity.X, Z: e.Velocity.Z},
+		Yaw:        e.Yaw,
+		TemplateId: e.TemplateID,
 	}
 }

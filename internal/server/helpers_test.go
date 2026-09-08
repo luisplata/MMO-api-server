@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/luisplata/mmo-api-server/internal/game"
+	"github.com/luisplata/mmo-api-server/internal/stats"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
@@ -62,16 +63,19 @@ func TestIsBindToken(t *testing.T) {
 }
 
 func TestEntityStateFromGame(t *testing.T) {
+	// Base entity: a character carrying a template id (design D3/D5).
 	e := &game.Entity{
-		ID:       "p1",
-		Pos:      game.Vec2{X: 1, Z: 2},
-		Y:        7.5,
-		Velocity: game.Vec2{X: 3, Z: 4},
-		Yaw:      0.5,
+		ID:         "char-1",
+		Pos:        game.Vec2{X: 1, Z: 2},
+		Y:          7.5,
+		Velocity:   game.Vec2{X: 3, Z: 4},
+		Yaw:        0.5,
+		TemplateID: "warrior",
+		Stats:      stats.Stats{HP: 120, Speed: 3, Atk: 10, Def: 8},
 	}
 	got := entityStateFromGame(e)
-	if got.Id != "p1" {
-		t.Errorf("Id = %q, want p1", got.Id)
+	if got.Id != "char-1" {
+		t.Errorf("Id = %q, want char-1", got.Id)
 	}
 	if got.Pos == nil || got.Pos.X != 1 || got.Pos.Y != 7.5 || got.Pos.Z != 2 {
 		t.Errorf("Pos = %v, want (1, 7.5, 2) carrying the derived Y", got.Pos)
@@ -81,5 +85,22 @@ func TestEntityStateFromGame(t *testing.T) {
 	}
 	if !almostEqual(got.Yaw, 0.5) {
 		t.Errorf("Yaw = %v, want 0.5", got.Yaw)
+	}
+	if got.TemplateId != "warrior" {
+		t.Errorf("TemplateId = %q, want warrior (design D5: client picks the prefab)", got.TemplateId)
+	}
+}
+
+// TestEntityStateFromGameTemplateIdEmpty triangulates the empty case: an
+// entity with no template (a non-character entity) MUST carry an empty
+// templateId on the wire.
+func TestEntityStateFromGameTemplateIdEmpty(t *testing.T) {
+	e := &game.Entity{ID: "npc-1", Pos: game.Vec2{X: 0, Z: 0}, Velocity: game.Vec2{}, Yaw: 0}
+	got := entityStateFromGame(e)
+	if got.Id != "npc-1" {
+		t.Errorf("Id = %q, want npc-1", got.Id)
+	}
+	if got.TemplateId != "" {
+		t.Errorf("TemplateId = %q, want empty for a template-less entity", got.TemplateId)
 	}
 }

@@ -10,6 +10,7 @@ package game
 import (
 	"testing"
 
+	"github.com/luisplata/mmo-api-server/internal/stats"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 
 	"github.com/luisplata/mmo-api-server/internal/world"
@@ -184,7 +185,7 @@ func TestAssemblerCarriesDerivedY(t *testing.T) {
 		t.Fatalf("DefaultHeightfield: %v", err)
 	}
 	sim := newSim(t, func(c *SimulationConfig) { c.Heights = heights })
-	if err := sim.RegisterPlayer("alice", Vec2{100, 200}); err != nil {
+	if err := sim.RegisterPlayer("alice", Vec2{100, 200}, "", stats.Stats{}); err != nil {
 		t.Fatal(err)
 	}
 	ws := sim.AssembleWorldSnapshot()
