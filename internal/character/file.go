@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -107,7 +108,7 @@ func (r *fileCharacterRepository) Create(c *Character) error {
 		}
 	}
 	for _, e := range r.chars {
-		if e.AccountID == c.AccountID && e.Name == c.Name {
+		if e.AccountID == c.AccountID && strings.EqualFold(e.Name, c.Name) {
 			return fmt.Errorf("%w: %q", ErrDuplicateName, c.Name)
 		}
 	}
@@ -156,7 +157,7 @@ func (r *fileCharacterRepository) FindByName(accountID, name string) (*Character
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, c := range r.chars {
-		if c.AccountID == accountID && c.Name == name {
+		if c.AccountID == accountID && strings.EqualFold(c.Name, name) {
 			return clone(c), nil
 		}
 	}

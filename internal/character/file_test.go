@@ -191,6 +191,27 @@ func TestFileRepositoryDuplicateNameSameAccount(t *testing.T) {
 	}
 }
 
+// TestFileRepositoryDuplicateNameCaseInsensitive covers per-account name
+// uniqueness being case-insensitive (design D7): a name differing only by
+// case ("Hero" vs "hero") in the SAME account must still collide. The
+// display charset allows uppercase, but uniqueness ignores case.
+func TestFileRepositoryDuplicateNameCaseInsensitive(t *testing.T) {
+	repo := newRepo(t)
+	c1 := &Character{AccountID: "luis", Name: "Hero", TemplateID: "warrior"}
+	c2 := &Character{AccountID: "luis", Name: "hero", TemplateID: "mage"}
+	if err := repo.Create(c1); err != nil {
+		t.Fatalf("Create c1: %v", err)
+	}
+	if err := repo.Create(c2); !errors.Is(err, ErrDuplicateName) {
+		t.Errorf("Create c2 (case-insensitive dup) err = %v, want ErrDuplicateName", err)
+	}
+	// FindByName is case-insensitive too: "hero" must resolve the stored "Hero".
+	got, err := repo.FindByName("luis", "hero")
+	if err != nil || got.ID != c1.ID {
+		t.Errorf("FindByName(luis, hero) = %+v, %v; want stored Hero (id %s)", got, err, c1.ID)
+	}
+}
+
 // TestFileRepositorySameNameDifferentAccount triangulates the uniqueness
 // rule: the SAME name is allowed in a DIFFERENT account (uniqueness is per
 // account, not global).
