@@ -5,6 +5,7 @@
 > **Fuente de verdad**: `proto/v1/world.proto`. El código generado (Go y C#) está **commiteado** en `proto/v1/gen/` — no necesitás protoc.
 > **Versión del contrato**: v2 (rango negociado `[2, 2]`). Un cliente v1 es rechazado con `VersionMismatch` antes de auth (fail-fast).
 > **Terreno**: el mapa de alturas tiene su propio contrato en [`HEIGHTMAP.md`](HEIGHTMAP.md) — el server samplea el terreno y la altura viaja en `pos.y`/`spawnPos.y` (ver §5).
+> **Personajes**: el flujo de personajes (listar/crear/seleccionar antes de entrar al mundo, `templateId`) tiene su hoja de handoff Unity en [`UNITY_CHARACTER_HANDOFF.md`](UNITY_CHARACTER_HANDOFF.md) (ver §4 y §5).
 
 ---
 
@@ -12,9 +13,9 @@
 
 1. **Conectá TCP** a `<host>:8000` y mandá `Hello{ protoVer: 2 }`.
 2. Recibís `ServerInfo` (versión negociada, `tickRate`, `serverTime`) → mandá `AuthRequest{ username, password }`.
-3. Recibís `AuthResponse{ ok, playerId, spawnPos, udpToken }` → mandá `EnterWorld`.
-4. Recibís dos `WorldSnapshot` por TCP (el primero vacío = ack de `EnterWorld`; el segundo = estado real del mundo). **Bindeá UDP**: el **primer datagrama** a `<host>:8001` es el `udpToken` **crudo** (sin envelope).
-5. **Estado estable**: mandá `MoveInput` por UDP, recibís `Snapshot` a 10 Hz, y escuchá `SpawnEntity`/`DespawnEntity` por TCP.
+3. Recibís `AuthResponse{ ok, playerId, udpToken }` (ya **no** trae `spawnPos`; la sesión queda en **`selecting`**). En esa fase: `ListCharacters`, y/o `CreateCharacter` + `SelectCharacter` (este último te resuelve `spawnPos` + `stats` + `templateId`).
+4. Recién ahí mandá `EnterWorld`. Recibís dos `WorldSnapshot` por TCP (el primero vacío = ack de `EnterWorld`; el segundo = estado real del mundo). **Bindeá UDP**: el **primer datagrama** a `<host>:8001` es el `udpToken` **crudo** (sin envelope).
+5. **Estado estable**: mandá `MoveInput` por UDP, recibís `Snapshot` a 10 Hz, y escuchá `SpawnEntity`/`DespawnEntity` por TCP. Cada `EntityState` trae `templateId` para elegir el modelo visual.
 
 ```csharp
 // Pseudo-C# (Unity). Los helpers Send/Recv codifican el envelope por vos.
@@ -22,8 +23,14 @@ var tcp = ConnectTcp(host, 8000);
 Send(new Hello { ProtoVer = 2 });                    // paso 1
 var info = Recv<ServerInfo>();                       // paso 2
 Send(new AuthRequest { Username = user, Password = pass });
-var auth = Recv<AuthResponse>();                     // paso 3 — guardá UdpToken y SpawnPos
-Send(new EnterWorld());                              // paso 3
+var auth = Recv<AuthResponse>();                     // paso 3 — guardá UdpToken (ya no trae SpawnPos)
+Send(new ListCharacters());                          // paso 3 — fase selecting
+var list = Recv<CharacterList>();                    // personajes de la cuenta
+Send(new CreateCharacter { TemplateId = "warrior", Name = "Hero" });
+var created = Recv<CreateCharacterResponse>();       // Character { id, templateId, stats }
+Send(new SelectCharacter { CharacterId = created.Character.Id });
+var sel = Recv<SelectCharacterResponse>();           // spawnPos + stats + templateId
+Send(new EnterWorld());                              // paso 4 — recién ahora
 Recv<WorldSnapshot>();                               // paso 4 — vacío (ack)
 Recv<WorldSnapshot>();                               // paso 4 — real (estado del mundo)
 
@@ -40,7 +47,7 @@ var snap = RecvUdp<Snapshot>();                      // paso 5 — 10 Hz
 
 | Canal | Mensajes | Fiabilidad | Uso |
 |-------|----------|-----------|-----|
-| **TCP** (`:8000`) | `Hello`, `ServerInfo`, `VersionMismatch`, `AuthRequest`, `AuthResponse`, `EnterWorld`, `WorldSnapshot`, `SpawnEntity`, `DespawnEntity`, `Ack` | Fiable — stream reensamblado por prefijo de longitud | Lifecycle, handshake, auth, spawn/despawn, comandos fiables |
+| **TCP** (`:8000`) | `Hello`, `ServerInfo`, `VersionMismatch`, `AuthRequest`, `AuthResponse`, `ListCharacters`, `CharacterList`, `CreateCharacter`, `CreateCharacterResponse`, `SelectCharacter`, `SelectCharacterResponse`, `EnterWorld`, `WorldSnapshot`, `SpawnEntity`, `DespawnEntity`, `Ack` | Fiable — stream reensamblado por prefijo de longitud | Lifecycle, handshake, auth, selección de personaje (ids 13–18), spawn/despawn, comandos fiables |
 | **UDP** (`:8001`) | `MoveInput` (cliente→servidor), `Snapshot` (servidor→cliente) | No fiable — 1 datagrama = 1 frame | Movimiento y sync del mundo |
 
 - **NO hay KCP en v2.** UDP es crudo, sin capa de fiabilidad encima. `Ack` existe (v2 sin retransmisión), pero no hay reenvío.
@@ -101,9 +108,15 @@ var snap = RecvUdp<Snapshot>();                      // paso 5 — 10 Hz
 Cliente (Unity)                          Servidor (mmo-api-server)
       |  TCP: conecta                         |
       |────── Hello{ protoVer: 2 } ──────────►|
-      |◄───── ServerInfo{ protoVer:1, tickRate:20, serverTime } ─|
+      |◄───── ServerInfo{ protoVer:2, tickRate:20, serverTime } ─|
       |────── AuthRequest{ username, password } ►|
-      |◄───── AuthResponse{ ok, playerId, spawnPos, udpToken } ─|
+      |◄───── AuthResponse{ ok, playerId, udpToken } ─|  ← fase selecting
+      |────── ListCharacters ────────────────►|
+      |◄───── CharacterList{ characters[] } ──|
+      |────── CreateCharacter{ templateId, name } ►|
+      |◄───── CreateCharacterResponse{ ok, character } ─|
+      |────── SelectCharacter{ characterId } ►|
+      |◄───── SelectCharacterResponse{ ok, character, spawnPos } ─|  ← selecting → entering
       |────── EnterWorld ────────────────────►|
       |◄───── WorldSnapshot (VACÍO — ack de EnterWorld, needs-ack) ─|
       |◄───── WorldSnapshot (REAL — estado completo del mundo) ─|
@@ -115,8 +128,9 @@ Cliente (Unity)                          Servidor (mmo-api-server)
 
 Reglas del ciclo de vida:
 
+- **Fase `selecting` (nueva en v2)**: tras un `AuthResponse` ok, la sesión NO está lista para `EnterWorld`. `ListCharacters`/`CreateCharacter`/`SelectCharacter` son los únicos mensajes válidos en `selecting`; `SelectCharacter` resuelve `spawnPos` + `stats` + `templateId` y recién ahí la sesión pasa a `entering`. `EnterWorld` antes de seleccionar un personaje → error de protocolo y la sesión se cierra.
 - **Fuera de orden = cierre.** Cada mensaje solo es válido en su estado (ej.: `EnterWorld` antes de auth → error de protocolo y la sesión se cierra).
-- **Dos `WorldSnapshot` al entrar**: el primero es el ack del `EnterWorld` (vacío, con flag `needs-ack` — contestalo con `Ack`); el segundo lo manda el server cuando te registra en la simulación y es el estado **real** del mundo (todos los jugadores, v2 flat fanout).
+- **Dos `WorldSnapshot` al entrar**: el primero es el ack del `EnterWorld` (vacío, con flag `needs-ack` — contestalo con `Ack`); el segundo lo manda el server cuando te registra en la simulación y es el estado **real** del mundo (todos los jugadores, v2 flat fanout). Cada `EntityState` de ese snapshot y de los `Snapshot`/`SpawnEntity` lleva el `templateId` del personaje.
 - **Bind UDP**: el server asocia tu dirección UDP con tu sesión TCP autenticada usando el token. **Tokens incorrectos/desconocidos se ignoran** (no bindean). Después del bind, solo la dirección bindeada recibe snapshots.
 - **Timeout de handshake**: 10 s desde la conexión (default del server, hardcodeado en `cmd/server/main.go` — no es flag). Si el handshake no completa a tiempo, el siguiente frame cierra la sesión.
 - **Login duplicado**: un segundo `playerId` ya conectado se rechaza (la segunda conexión se cae).
@@ -124,9 +138,9 @@ Reglas del ciclo de vida:
 
 ---
 
-## 5. Catálogo de mensajes (ids 1–12)
+## 5. Catálogo de mensajes (ids 1–18)
 
-Tipos embebidos (no son mensajes de envelope): `Vec2{ x, z }` (plano de tierra: velocidad y `MoveInput.dir`), `Vec3{ x, y, z }` (**posición y spawn** — la `y` es la **altura derivada del terreno**, calculada por el server a partir del mapa de alturas, **nunca enviada por el cliente**; la cámara sigue siendo client-local, no se networkea) y `EntityState{ id, pos, velocity, yaw }` (**yaw en radianes**; **no existen** pitch/roll, es estructuralmente imposible).
+Tipos embebidos (no son mensajes de envelope): `Vec2{ x, z }` (plano de tierra: velocidad y `MoveInput.dir`), `Vec3{ x, y, z }` (**posición y spawn** — la `y` es la **altura derivada del terreno**, calculada por el server a partir del mapa de alturas, **nunca enviada por el cliente**; la cámara sigue siendo client-local, no se networkea), `EntityState{ id, pos, velocity, yaw, templateId }` (**yaw en radianes**; `templateId` es la **plantilla del personaje** — aditivo, campo 5 — para que el cliente elija el modelo visual, vacío en entidades no-personaje; **no existen** pitch/roll, es estructuralmente imposible), `Stats{ hp, speed, atk, def }` (los valores numéricos de la hoja del personaje) y `Character{ id, accountId, name, templateId, stats, createdAt }` (un personaje de la cuenta; `id` es la **entidad del mundo** cuando se selecciona).
 
 | Id | Mensaje | Dirección | Transporte | Campos clave | Notas |
 |----|---------|-----------|------------|--------------|-------|
@@ -140,8 +154,14 @@ Tipos embebidos (no son mensajes de envelope): `Vec2{ x, z }` (plano de tierra: 
 | 8 | `Snapshot` | S → C | UDP | `seq (int32, server, monotónico)`, `entities[]` | 10 Hz. Descartá `seq ≤ last-applied` (duplicados y viejos). |
 | 9 | `VersionMismatch` | S → C | TCP | `minVer`, `maxVer` | Se envía y **cierra** la sesión. |
 | 10 | `Ack` | ambos | TCP | `seq (uint32)` | Acuse de un frame con `needs-ack`. v2: **sin retransmisión**. Un `Ack` nunca se contesta con otro `Ack`. |
-| 11 | `SpawnEntity` | S → C | TCP | `entityId`, `state (EntityState)` | Cuando una entidad entra en tu interés (v2 flat: al hacer join). Lleva estado completo para no esperar al próximo snapshot. |
+| 11 | `SpawnEntity` | S → C | TCP | `entityId`, `state (EntityState)` | Cuando una entidad entra en tu interés (v2 flat: al hacer join). Lleva estado completo (incluido `templateId`) para no esperar al próximo snapshot. |
 | 12 | `DespawnEntity` | S → C | TCP | `entityId` | Cuando una entidad sale de tu interés (v2 flat: al dejar la sesión). Solo el id — removela. |
+| 13 | `ListCharacters` | C → S | TCP | — (vacío) | Pide los personajes de la cuenta autenticada. Solo válido en `selecting`. |
+| 14 | `CharacterList` | S → C | TCP | `characters[] (Character)` | Respuesta a `ListCharacters`. Vacío si la cuenta no tiene personajes (no es error). |
+| 15 | `CreateCharacter` | C → S | TCP | `templateId`, `name` | Crea un personaje para la cuenta. Solo válido en `selecting`. Valida plantilla, nombre (trim 3–16, `[a-zA-Z0-9_]`) y unicidad por cuenta. |
+| 16 | `CreateCharacterResponse` | S → C | TCP | `ok`, `character (Character)`, `errorMessage` | `ok=true` → `character` (id + `templateId` + stats congeladas de la plantilla). `ok=false` → `errorMessage` (plantilla inexistente, nombre inválido/duplicado); **no muta** estado. |
+| 17 | `SelectCharacter` | C → S | TCP | `characterId` | Activa un personaje de la cuenta como entidad del mundo. Solo válido en `selecting`; verifica que exista y pertenezca a la cuenta. |
+| 18 | `SelectCharacterResponse` | S → C | TCP | `ok`, `character (Character)`, `spawnPos (Vec3)`, `errorMessage` | `ok=true` → `spawnPos` (altura del terreno resuelta) + `character` (`stats` + `templateId`) y la sesión pasa a `entering`. `ok=false` → `errorMessage` (personaje ajeno/inexistente); el activo no cambia. |
 
 ---
 
@@ -191,6 +211,18 @@ v2 **no tiene códigos numéricos de error en el wire**. Las fallas se manifiest
 
 > En TCP, ante cualquier violación el server **cierra** la conexión: el cliente debe reintentar con una sesión nueva. En UDP no hay cierre — los frames inválidos simplemente se descartan.
 
+### Rechazos de character-management (no cierran la sesión)
+
+A diferencia de las violaciones de estado de arriba, los rechazos de `CreateCharacter`/`SelectCharacter` se responden con un `ok:false` + `errorMessage` y la sesión **permanece abierta** en `selecting` (el cliente puede corregir y reintentar). Rechazos posibles:
+
+| Condición | Mensaje | Canal |
+|-----------|---------|-------|
+| Plantilla inexistente | `CreateCharacterResponse{ ok:false, errorMessage:"template not found" }` | TCP |
+| Nombre inválido (vacío / fuera de rango / charset) | `CreateCharacterResponse{ ok:false, errorMessage:<razón> }` | TCP |
+| Nombre duplicado por cuenta | `CreateCharacterResponse{ ok:false, errorMessage:"name already used in account" }` | TCP |
+| Personaje inexistente | `SelectCharacterResponse{ ok:false, errorMessage:"character not found" }` | TCP |
+| Personaje ajeno (de otra cuenta) | `SelectCharacterResponse{ ok:false, errorMessage:"character not owned by account" }` | TCP |
+
 ---
 
 ## 9. Versionado & compatibilidad
@@ -198,8 +230,8 @@ v2 **no tiene códigos numéricos de error en el wire**. Las fallas se manifiest
 - **`envelope.version` = major del protocolo.** Se negocia en el handshake: tanto el `version` del envelope como `Hello.protoVer` deben caer dentro de `[minVer, maxVer]` del server.
 - **Mismatch → `VersionMismatch` + cierre** (antes de cerrar, te dice el rango soportado).
 - **Server v2: rango `[2, 2]`.** Un cliente con major ≠ 2 (incluidos todos los v1) es rechazado **fail-fast** antes de auth.
-- **Lockstep del cliente**: v2 cambia la forma de la posición (`Vec2` → `Vec3`). El cliente Unity **debe** actualizar su `World.cs` generado **en la misma ventana** que el server v2 — un `World.cs` viejo contra un server v2 no puede interoperar (shape distinta) y un cliente v1 es rechazado por versión. No hay interoperabilidad v1↔v2.
-- **Minor bumps son aditivos**: nuevos mensajes con ids nuevos, nuevos campos con números nuevos, campos removidos con `reserved`. Los campos desconocidos se preservan → un cliente viejo y un server nuevo (o al revés) interoperan **dentro del mismo major** sin romperse.
+- **Lockstep del cliente**: v2 cambia la forma de la posición (`Vec2` → `Vec3`) y agrega la fase `selecting` + los mensajes de personaje (ids 13–18) y `EntityState.templateId`. El cliente Unity **debe** actualizar su `World.cs` generado **en la misma ventana** que el server v2 — un `World.cs` viejo contra un server v2 no puede interoperar (shape distinta, y el flujo de personaje no existe) y un cliente v1 es rechazado por versión. No hay interoperabilidad v1↔v2.
+- **Minor bumps son aditivos**: nuevos mensajes con ids nuevos, nuevos campos con números nuevos, campos removidos con `reserved`. Los campos desconocidos se preservan → un cliente viejo y un server nuevo (o al revés) interoperan **dentro del mismo major** sin romperse. Los ids 13–18 y `EntityState.templateId` ya están en el `World.cs` commiteado (v2) — no requieren protoc del lado Unity.
 - El doc y el `.proto` evolucionan juntos; el `.proto` es la fuente de verdad.
 
 ---
@@ -207,7 +239,9 @@ v2 **no tiene códigos numéricos de error en el wire**. Las fallas se manifiest
 ## 10. Checklist Unity / IL2CPP
 
 - [ ] **Google.Protobuf ≥ 3.35.1** (NuGet) — el C# generado se produjo con `protoc-gen-csharp v35.1`; usá el runtime de esa línea.
-- [ ] **`World.cs` v2 (lockstep)**: regenerá/reemplazá el `World.cs` del cliente con el del repo (`proto/v1/gen/csharp/World.cs`) en la misma ventana que el server v2. Contiene `Vec3` — la posición ahora es `pos`/`spawnPos` de 3 floats.
+- [ ] **`World.cs` v2 (lockstep)**: regenerá/reemplazá el `World.cs` del cliente con el del repo (`proto/v1/gen/csharp/World.cs`) en la misma ventana que el server v2. Contiene `Vec3`, los mensajes de personaje (ids 13–18) y `EntityState.templateId`.
+- [ ] **Fase `selecting`**: tras `AuthResponse`, NO vayas directo a `EnterWorld`. Mostrá la lista (`ListCharacters`), creá/seleccioná (`CreateCharacter` + `SelectCharacter`) y **recién ahí** mandá `EnterWorld`. `EnterWorld` sin personaje seleccionado cierra la sesión.
+- [ ] **`templateId`**: usalo de `SelectCharacterResponse.character.templateId`, del `WorldSnapshot` y de cada `SpawnEntity`/`Snapshot` para elegir el prefab visual del personaje. El campo es aditivo y vacío para entidades no-personaje.
 - [ ] **AOT-safe**: sin `DynamicMessage`, sin `Any`, sin `JsonParser` (rutas de reflexión → prohibidas en IL2CPP).
 - [ ] Usá **solo las clases generadas** de `Mmo.V1` (`proto/v1/gen/csharp/World.cs`, commiteado — no corras protoc).
 - [ ] Serializá/deserializá con `MessageParser` del código generado. Nada de serialización a mano, nada de gob.
@@ -217,4 +251,5 @@ v2 **no tiene códigos numéricos de error en el wire**. Las fallas se manifiest
 - [ ] Descartá `Snapshot.seq ≤ last-applied` y contestá `Ack` a los frames con flag `needs-ack`.
 - [ ] **Tratá `pos.y`/`spawnPos.y` como altura autoritativa**: no la generes, no la mandes, no la corrijas. La cámara la posiciona el cliente sobre el estado autoritativo.
 - [ ] **Terreno**: si el server corre con un mapa (`-map`), el cliente no necesita el heightmap — la altura ya viaja en los snapshots. El heightmap es solo para el pipeline de autoría (ver `HEIGHTMAP.md`).
+- [ ] **Personajes**: la hoja de handoff completa del flujo de personajes está en [`UNITY_CHARACTER_HANDOFF.md`](UNITY_CHARACTER_HANDOFF.md).
 - [ ] Probá contra el server local: `go run ./cmd/server` o `docker compose up`.
