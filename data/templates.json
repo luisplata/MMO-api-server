@@ -1,0 +1,20 @@
+[
+  {
+    "id": "warrior",
+    "name": "Guerrero",
+    "baseStats": { "hp": 120, "speed": 3, "atk": 10, "def": 8 },
+    "visualHint": "warrior_model"
+  },
+  {
+    "id": "mage",
+    "name": "Mago",
+    "baseStats": { "hp": 80, "speed": 4, "atk": 14, "def": 4 },
+    "visualHint": "mage_model"
+  },
+  {
+    "id": "ranger",
+    "name": "Explorador",
+    "baseStats": { "hp": 90, "speed": 5, "atk": 9, "def": 5 },
+    "visualHint": "ranger_model"
+  }
+]
