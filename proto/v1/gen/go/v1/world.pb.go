@@ -28,8 +28,16 @@
 //	10  Ack
 //	11  SpawnEntity
 //	12  DespawnEntity
+//	13  ListCharacters
+//	14  CharacterList
+//	15  CreateCharacter
+//	16  CreateCharacterResponse
+//	17  SelectCharacter
+//	18  SelectCharacterResponse
 //
-// New message types take new additive ids.
+// New message types take new additive ids. Ids 13-18 enable the
+// character-management flow (list/create/select) on top of an existing
+// session; they are additive and never reuse a prior field or id.
 //
 // Entity shape (design D3, v2): position is Vec3 (x, y, z) where y is
 // the server-derived terrain height — never client-supplied. Velocity
@@ -181,13 +189,16 @@ func (x *Vec3) GetZ() float32 {
 // Vec3 carrying the derived terrain height in pos.y; velocity is the
 // Vec2 ground-plane velocity; yaw is in radians (v2 sends raw radians;
 // future delta-encoding must handle wrap-around at 0/2π). No pitch/roll
-// fields exist by design.
+// fields exist by design. templateId (field 5) is additive and carries
+// the character-template hint so the client can pick the visual model;
+// it is empty for non-character entities.
 type EntityState struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Pos           *Vec3                  `protobuf:"bytes,2,opt,name=pos,proto3" json:"pos,omitempty"`
 	Velocity      *Vec2                  `protobuf:"bytes,3,opt,name=velocity,proto3" json:"velocity,omitempty"`
 	Yaw           float32                `protobuf:"fixed32,4,opt,name=yaw,proto3" json:"yaw,omitempty"`
+	TemplateId    string                 `protobuf:"bytes,5,opt,name=templateId,proto3" json:"templateId,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -248,6 +259,13 @@ func (x *EntityState) GetYaw() float32 {
 		return x.Yaw
 	}
 	return 0
+}
+
+func (x *EntityState) GetTemplateId() string {
+	if x != nil {
+		return x.TemplateId
+	}
+	return ""
 }
 
 // Hello opens a TCP session and announces the client's protocol major
@@ -907,6 +925,488 @@ func (x *DespawnEntity) GetEntityId() string {
 	return ""
 }
 
+// Stats is the numeric character sheet. Shape is data, not hardcoded
+// values: the server derives Stats from a Template at Create and freezes
+// them onto the Character. float32 preserves wire fidelity with the Unity
+// client (C# float).
+type Stats struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hp            float32                `protobuf:"fixed32,1,opt,name=hp,proto3" json:"hp,omitempty"`
+	Speed         float32                `protobuf:"fixed32,2,opt,name=speed,proto3" json:"speed,omitempty"`
+	Atk           float32                `protobuf:"fixed32,3,opt,name=atk,proto3" json:"atk,omitempty"`
+	Def           float32                `protobuf:"fixed32,4,opt,name=def,proto3" json:"def,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Stats) Reset() {
+	*x = Stats{}
+	mi := &file_v1_world_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Stats) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Stats) ProtoMessage() {}
+
+func (x *Stats) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_world_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Stats.ProtoReflect.Descriptor instead.
+func (*Stats) Descriptor() ([]byte, []int) {
+	return file_v1_world_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *Stats) GetHp() float32 {
+	if x != nil {
+		return x.Hp
+	}
+	return 0
+}
+
+func (x *Stats) GetSpeed() float32 {
+	if x != nil {
+		return x.Speed
+	}
+	return 0
+}
+
+func (x *Stats) GetAtk() float32 {
+	if x != nil {
+		return x.Atk
+	}
+	return 0
+}
+
+func (x *Stats) GetDef() float32 {
+	if x != nil {
+		return x.Def
+	}
+	return 0
+}
+
+// Character is one owned character of an account. id is the world entity
+// id once selected; accountId ties it to its owner; stats is the frozen
+// template snapshot; createdAt is ms since epoch.
+type Character struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	AccountId     string                 `protobuf:"bytes,2,opt,name=accountId,proto3" json:"accountId,omitempty"`
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	TemplateId    string                 `protobuf:"bytes,4,opt,name=templateId,proto3" json:"templateId,omitempty"`
+	Stats         *Stats                 `protobuf:"bytes,5,opt,name=stats,proto3" json:"stats,omitempty"`
+	CreatedAt     int64                  `protobuf:"varint,6,opt,name=createdAt,proto3" json:"createdAt,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Character) Reset() {
+	*x = Character{}
+	mi := &file_v1_world_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Character) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Character) ProtoMessage() {}
+
+func (x *Character) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_world_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Character.ProtoReflect.Descriptor instead.
+func (*Character) Descriptor() ([]byte, []int) {
+	return file_v1_world_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *Character) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Character) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *Character) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Character) GetTemplateId() string {
+	if x != nil {
+		return x.TemplateId
+	}
+	return ""
+}
+
+func (x *Character) GetStats() *Stats {
+	if x != nil {
+		return x.Stats
+	}
+	return nil
+}
+
+func (x *Character) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+// ListCharacters asks for every character of the authenticated account.
+// The account comes from the session, so the request carries no fields.
+type ListCharacters struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListCharacters) Reset() {
+	*x = ListCharacters{}
+	mi := &file_v1_world_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListCharacters) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListCharacters) ProtoMessage() {}
+
+func (x *ListCharacters) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_world_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListCharacters.ProtoReflect.Descriptor instead.
+func (*ListCharacters) Descriptor() ([]byte, []int) {
+	return file_v1_world_proto_rawDescGZIP(), []int{17}
+}
+
+// CharacterList answers ListCharacters. Empty when the account has no
+// characters (not an error).
+type CharacterList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Characters    []*Character           `protobuf:"bytes,1,rep,name=characters,proto3" json:"characters,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CharacterList) Reset() {
+	*x = CharacterList{}
+	mi := &file_v1_world_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CharacterList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CharacterList) ProtoMessage() {}
+
+func (x *CharacterList) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_world_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CharacterList.ProtoReflect.Descriptor instead.
+func (*CharacterList) Descriptor() ([]byte, []int) {
+	return file_v1_world_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *CharacterList) GetCharacters() []*Character {
+	if x != nil {
+		return x.Characters
+	}
+	return nil
+}
+
+// CreateCharacter creates a character for the account. The server
+// validates template existence, name (trimmed 3-16, [a-zA-Z0-9_]) and
+// per-account uniqueness, then freezes the template's baseStats onto the
+// new Character.
+type CreateCharacter struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TemplateId    string                 `protobuf:"bytes,1,opt,name=templateId,proto3" json:"templateId,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateCharacter) Reset() {
+	*x = CreateCharacter{}
+	mi := &file_v1_world_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateCharacter) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateCharacter) ProtoMessage() {}
+
+func (x *CreateCharacter) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_world_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateCharacter.ProtoReflect.Descriptor instead.
+func (*CreateCharacter) Descriptor() ([]byte, []int) {
+	return file_v1_world_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *CreateCharacter) GetTemplateId() string {
+	if x != nil {
+		return x.TemplateId
+	}
+	return ""
+}
+
+func (x *CreateCharacter) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+// CreateCharacterResponse answers CreateCharacter. On ok=true character
+// holds the persisted Character (id + stats snapshot); on ok=false
+// errorMessage explains the rejection and no state is mutated.
+type CreateCharacterResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Character     *Character             `protobuf:"bytes,2,opt,name=character,proto3" json:"character,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,3,opt,name=errorMessage,proto3" json:"errorMessage,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateCharacterResponse) Reset() {
+	*x = CreateCharacterResponse{}
+	mi := &file_v1_world_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateCharacterResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateCharacterResponse) ProtoMessage() {}
+
+func (x *CreateCharacterResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_world_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateCharacterResponse.ProtoReflect.Descriptor instead.
+func (*CreateCharacterResponse) Descriptor() ([]byte, []int) {
+	return file_v1_world_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *CreateCharacterResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *CreateCharacterResponse) GetCharacter() *Character {
+	if x != nil {
+		return x.Character
+	}
+	return nil
+}
+
+func (x *CreateCharacterResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+// SelectCharacter activates one of the account's characters as the
+// session's world entity. Only valid in the `selecting` phase for a
+// character owned by the account.
+type SelectCharacter struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CharacterId   string                 `protobuf:"bytes,1,opt,name=characterId,proto3" json:"characterId,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SelectCharacter) Reset() {
+	*x = SelectCharacter{}
+	mi := &file_v1_world_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SelectCharacter) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SelectCharacter) ProtoMessage() {}
+
+func (x *SelectCharacter) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_world_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SelectCharacter.ProtoReflect.Descriptor instead.
+func (*SelectCharacter) Descriptor() ([]byte, []int) {
+	return file_v1_world_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *SelectCharacter) GetCharacterId() string {
+	if x != nil {
+		return x.CharacterId
+	}
+	return ""
+}
+
+// SelectCharacterResponse answers SelectCharacter. On ok=true character
+// carries the selected Character (stats + templateId) and spawnPos is the
+// resolved spawn point; the session consumes both when EnterWorld is
+// received. On ok=false errorMessage explains the rejection and the
+// previously active character (if any) is unchanged.
+type SelectCharacterResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Character     *Character             `protobuf:"bytes,2,opt,name=character,proto3" json:"character,omitempty"`
+	SpawnPos      *Vec3                  `protobuf:"bytes,3,opt,name=spawnPos,proto3" json:"spawnPos,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,4,opt,name=errorMessage,proto3" json:"errorMessage,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SelectCharacterResponse) Reset() {
+	*x = SelectCharacterResponse{}
+	mi := &file_v1_world_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SelectCharacterResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SelectCharacterResponse) ProtoMessage() {}
+
+func (x *SelectCharacterResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_world_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SelectCharacterResponse.ProtoReflect.Descriptor instead.
+func (*SelectCharacterResponse) Descriptor() ([]byte, []int) {
+	return file_v1_world_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *SelectCharacterResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *SelectCharacterResponse) GetCharacter() *Character {
+	if x != nil {
+		return x.Character
+	}
+	return nil
+}
+
+func (x *SelectCharacterResponse) GetSpawnPos() *Vec3 {
+	if x != nil {
+		return x.SpawnPos
+	}
+	return nil
+}
+
+func (x *SelectCharacterResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
 var File_v1_world_proto protoreflect.FileDescriptor
 
 const file_v1_world_proto_rawDesc = "" +
@@ -918,12 +1418,15 @@ const file_v1_world_proto_rawDesc = "" +
 	"\x04Vec3\x12\f\n" +
 	"\x01x\x18\x01 \x01(\x02R\x01x\x12\f\n" +
 	"\x01y\x18\x02 \x01(\x02R\x01y\x12\f\n" +
-	"\x01z\x18\x03 \x01(\x02R\x01z\"y\n" +
+	"\x01z\x18\x03 \x01(\x02R\x01z\"\x99\x01\n" +
 	"\vEntityState\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1e\n" +
 	"\x03pos\x18\x02 \x01(\v2\f.mmo.v1.Vec3R\x03pos\x12(\n" +
 	"\bvelocity\x18\x03 \x01(\v2\f.mmo.v1.Vec2R\bvelocity\x12\x10\n" +
-	"\x03yaw\x18\x04 \x01(\x02R\x03yaw\"#\n" +
+	"\x03yaw\x18\x04 \x01(\x02R\x03yaw\x12\x1e\n" +
+	"\n" +
+	"templateId\x18\x05 \x01(\tR\n" +
+	"templateId\"#\n" +
 	"\x05Hello\x12\x1a\n" +
 	"\bprotoVer\x18\x01 \x01(\x05R\bprotoVer\"d\n" +
 	"\n" +
@@ -963,7 +1466,42 @@ const file_v1_world_proto_rawDesc = "" +
 	"\bentityId\x18\x01 \x01(\tR\bentityId\x12)\n" +
 	"\x05state\x18\x02 \x01(\v2\x13.mmo.v1.EntityStateR\x05state\"+\n" +
 	"\rDespawnEntity\x12\x1a\n" +
-	"\bentityId\x18\x01 \x01(\tR\bentityIdBGZ<github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1;mmov1\xaa\x02\x06Mmo.V1b\x06proto3"
+	"\bentityId\x18\x01 \x01(\tR\bentityId\"Q\n" +
+	"\x05Stats\x12\x0e\n" +
+	"\x02hp\x18\x01 \x01(\x02R\x02hp\x12\x14\n" +
+	"\x05speed\x18\x02 \x01(\x02R\x05speed\x12\x10\n" +
+	"\x03atk\x18\x03 \x01(\x02R\x03atk\x12\x10\n" +
+	"\x03def\x18\x04 \x01(\x02R\x03def\"\xb0\x01\n" +
+	"\tCharacter\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1c\n" +
+	"\taccountId\x18\x02 \x01(\tR\taccountId\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x1e\n" +
+	"\n" +
+	"templateId\x18\x04 \x01(\tR\n" +
+	"templateId\x12#\n" +
+	"\x05stats\x18\x05 \x01(\v2\r.mmo.v1.StatsR\x05stats\x12\x1c\n" +
+	"\tcreatedAt\x18\x06 \x01(\x03R\tcreatedAt\"\x10\n" +
+	"\x0eListCharacters\"B\n" +
+	"\rCharacterList\x121\n" +
+	"\n" +
+	"characters\x18\x01 \x03(\v2\x11.mmo.v1.CharacterR\n" +
+	"characters\"E\n" +
+	"\x0fCreateCharacter\x12\x1e\n" +
+	"\n" +
+	"templateId\x18\x01 \x01(\tR\n" +
+	"templateId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"~\n" +
+	"\x17CreateCharacterResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12/\n" +
+	"\tcharacter\x18\x02 \x01(\v2\x11.mmo.v1.CharacterR\tcharacter\x12\"\n" +
+	"\ferrorMessage\x18\x03 \x01(\tR\ferrorMessage\"3\n" +
+	"\x0fSelectCharacter\x12 \n" +
+	"\vcharacterId\x18\x01 \x01(\tR\vcharacterId\"\xa8\x01\n" +
+	"\x17SelectCharacterResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12/\n" +
+	"\tcharacter\x18\x02 \x01(\v2\x11.mmo.v1.CharacterR\tcharacter\x12(\n" +
+	"\bspawnPos\x18\x03 \x01(\v2\f.mmo.v1.Vec3R\bspawnPos\x12\"\n" +
+	"\ferrorMessage\x18\x04 \x01(\tR\ferrorMessageBGZ<github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1;mmov1\xaa\x02\x06Mmo.V1b\x06proto3"
 
 var (
 	file_v1_world_proto_rawDescOnce sync.Once
@@ -977,37 +1515,50 @@ func file_v1_world_proto_rawDescGZIP() []byte {
 	return file_v1_world_proto_rawDescData
 }
 
-var file_v1_world_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_v1_world_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_v1_world_proto_goTypes = []any{
-	(*Vec2)(nil),            // 0: mmo.v1.Vec2
-	(*Vec3)(nil),            // 1: mmo.v1.Vec3
-	(*EntityState)(nil),     // 2: mmo.v1.EntityState
-	(*Hello)(nil),           // 3: mmo.v1.Hello
-	(*ServerInfo)(nil),      // 4: mmo.v1.ServerInfo
-	(*VersionMismatch)(nil), // 5: mmo.v1.VersionMismatch
-	(*AuthRequest)(nil),     // 6: mmo.v1.AuthRequest
-	(*AuthResponse)(nil),    // 7: mmo.v1.AuthResponse
-	(*EnterWorld)(nil),      // 8: mmo.v1.EnterWorld
-	(*WorldSnapshot)(nil),   // 9: mmo.v1.WorldSnapshot
-	(*MoveInput)(nil),       // 10: mmo.v1.MoveInput
-	(*Snapshot)(nil),        // 11: mmo.v1.Snapshot
-	(*Ack)(nil),             // 12: mmo.v1.Ack
-	(*SpawnEntity)(nil),     // 13: mmo.v1.SpawnEntity
-	(*DespawnEntity)(nil),   // 14: mmo.v1.DespawnEntity
+	(*Vec2)(nil),                    // 0: mmo.v1.Vec2
+	(*Vec3)(nil),                    // 1: mmo.v1.Vec3
+	(*EntityState)(nil),             // 2: mmo.v1.EntityState
+	(*Hello)(nil),                   // 3: mmo.v1.Hello
+	(*ServerInfo)(nil),              // 4: mmo.v1.ServerInfo
+	(*VersionMismatch)(nil),         // 5: mmo.v1.VersionMismatch
+	(*AuthRequest)(nil),             // 6: mmo.v1.AuthRequest
+	(*AuthResponse)(nil),            // 7: mmo.v1.AuthResponse
+	(*EnterWorld)(nil),              // 8: mmo.v1.EnterWorld
+	(*WorldSnapshot)(nil),           // 9: mmo.v1.WorldSnapshot
+	(*MoveInput)(nil),               // 10: mmo.v1.MoveInput
+	(*Snapshot)(nil),                // 11: mmo.v1.Snapshot
+	(*Ack)(nil),                     // 12: mmo.v1.Ack
+	(*SpawnEntity)(nil),             // 13: mmo.v1.SpawnEntity
+	(*DespawnEntity)(nil),           // 14: mmo.v1.DespawnEntity
+	(*Stats)(nil),                   // 15: mmo.v1.Stats
+	(*Character)(nil),               // 16: mmo.v1.Character
+	(*ListCharacters)(nil),          // 17: mmo.v1.ListCharacters
+	(*CharacterList)(nil),           // 18: mmo.v1.CharacterList
+	(*CreateCharacter)(nil),         // 19: mmo.v1.CreateCharacter
+	(*CreateCharacterResponse)(nil), // 20: mmo.v1.CreateCharacterResponse
+	(*SelectCharacter)(nil),         // 21: mmo.v1.SelectCharacter
+	(*SelectCharacterResponse)(nil), // 22: mmo.v1.SelectCharacterResponse
 }
 var file_v1_world_proto_depIdxs = []int32{
-	1, // 0: mmo.v1.EntityState.pos:type_name -> mmo.v1.Vec3
-	0, // 1: mmo.v1.EntityState.velocity:type_name -> mmo.v1.Vec2
-	1, // 2: mmo.v1.AuthResponse.spawnPos:type_name -> mmo.v1.Vec3
-	2, // 3: mmo.v1.WorldSnapshot.entities:type_name -> mmo.v1.EntityState
-	0, // 4: mmo.v1.MoveInput.dir:type_name -> mmo.v1.Vec2
-	2, // 5: mmo.v1.Snapshot.entities:type_name -> mmo.v1.EntityState
-	2, // 6: mmo.v1.SpawnEntity.state:type_name -> mmo.v1.EntityState
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	1,  // 0: mmo.v1.EntityState.pos:type_name -> mmo.v1.Vec3
+	0,  // 1: mmo.v1.EntityState.velocity:type_name -> mmo.v1.Vec2
+	1,  // 2: mmo.v1.AuthResponse.spawnPos:type_name -> mmo.v1.Vec3
+	2,  // 3: mmo.v1.WorldSnapshot.entities:type_name -> mmo.v1.EntityState
+	0,  // 4: mmo.v1.MoveInput.dir:type_name -> mmo.v1.Vec2
+	2,  // 5: mmo.v1.Snapshot.entities:type_name -> mmo.v1.EntityState
+	2,  // 6: mmo.v1.SpawnEntity.state:type_name -> mmo.v1.EntityState
+	15, // 7: mmo.v1.Character.stats:type_name -> mmo.v1.Stats
+	16, // 8: mmo.v1.CharacterList.characters:type_name -> mmo.v1.Character
+	16, // 9: mmo.v1.CreateCharacterResponse.character:type_name -> mmo.v1.Character
+	16, // 10: mmo.v1.SelectCharacterResponse.character:type_name -> mmo.v1.Character
+	1,  // 11: mmo.v1.SelectCharacterResponse.spawnPos:type_name -> mmo.v1.Vec3
+	12, // [12:12] is the sub-list for method output_type
+	12, // [12:12] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_v1_world_proto_init() }
@@ -1021,7 +1572,7 @@ func file_v1_world_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_v1_world_proto_rawDesc), len(file_v1_world_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

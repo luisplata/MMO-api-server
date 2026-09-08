@@ -115,6 +115,12 @@ func TestRegistryMessageRoundTripDispatch(t *testing.T) {
 		{"Ack", 10, &mmov1.Ack{Seq: 42}},
 		{"SpawnEntity", 11, &mmov1.SpawnEntity{EntityId: "plr-009", State: &mmov1.EntityState{Id: "plr-009", Pos: &mmov1.Vec3{X: 1, Y: 0, Z: 2}, Yaw: 0.5}}},
 		{"DespawnEntity", 12, &mmov1.DespawnEntity{EntityId: "plr-009"}},
+		{"ListCharacters", 13, &mmov1.ListCharacters{}},
+		{"CharacterList", 14, &mmov1.CharacterList{Characters: []*mmov1.Character{{Id: "c1", AccountId: "alice", Name: "hero", TemplateId: "t1", Stats: &mmov1.Stats{Hp: 10, Speed: 5, Atk: 3, Def: 2}, CreatedAt: 1782912345678}}}},
+		{"CreateCharacter", 15, &mmov1.CreateCharacter{TemplateId: "t1", Name: "hero"}},
+		{"CreateCharacterResponse", 16, &mmov1.CreateCharacterResponse{Ok: true, Character: &mmov1.Character{Id: "c1", AccountId: "alice", Name: "hero", TemplateId: "t1", Stats: &mmov1.Stats{Hp: 10, Speed: 5, Atk: 3, Def: 2}, CreatedAt: 1782912345678}, ErrorMessage: ""}},
+		{"SelectCharacter", 17, &mmov1.SelectCharacter{CharacterId: "c1"}},
+		{"SelectCharacterResponse", 18, &mmov1.SelectCharacterResponse{Ok: true, Character: &mmov1.Character{Id: "c1", AccountId: "alice", Name: "hero", TemplateId: "t1", Stats: &mmov1.Stats{Hp: 10, Speed: 5, Atk: 3, Def: 2}, CreatedAt: 1782912345678}, SpawnPos: &mmov1.Vec3{X: 5, Y: 0, Z: 5}, ErrorMessage: ""}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

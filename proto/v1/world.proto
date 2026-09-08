@@ -28,8 +28,16 @@
 //	10  Ack
 //	11  SpawnEntity
 //	12  DespawnEntity
+//	13  ListCharacters
+//	14  CharacterList
+//	15  CreateCharacter
+//	16  CreateCharacterResponse
+//	17  SelectCharacter
+//	18  SelectCharacterResponse
 //
-// New message types take new additive ids.
+// New message types take new additive ids. Ids 13-18 enable the
+// character-management flow (list/create/select) on top of an existing
+// session; they are additive and never reuse a prior field or id.
 //
 // Entity shape (design D3, v2): position is Vec3 (x, y, z) where y is
 // the server-derived terrain height — never client-supplied. Velocity
@@ -63,12 +71,15 @@ message Vec3 {
 // Vec3 carrying the derived terrain height in pos.y; velocity is the
 // Vec2 ground-plane velocity; yaw is in radians (v2 sends raw radians;
 // future delta-encoding must handle wrap-around at 0/2π). No pitch/roll
-// fields exist by design.
+// fields exist by design. templateId (field 5) is additive and carries
+// the character-template hint so the client can pick the visual model;
+// it is empty for non-character entities.
 message EntityState {
   string id = 1;
   Vec3 pos = 2;
   Vec2 velocity = 3;
   float yaw = 4;
+  string templateId = 5;
 }
 
 // Hello opens a TCP session and announces the client's protocol major
@@ -161,4 +172,83 @@ message SpawnEntity {
 // It carries only the entity id — the client removes the entity.
 message DespawnEntity {
   string entityId = 1;
+}
+
+// ─── Character management (additive, type ids 13-18) ────────────────
+//
+// The player authenticates at account level (AuthResponse returns
+// accountId, not a spawn). Between auth and EnterWorld the session is in
+// the `selecting` phase: List/Create/Select run over TCP, Select resolves
+// spawn + stats + templateId, and only then does EnterWorld carry the
+// player into the world. Stats are a frozen snapshot of the template at
+// creation — never re-derived at runtime, never hardcoded in Go.
+
+// Stats is the numeric character sheet. Shape is data, not hardcoded
+// values: the server derives Stats from a Template at Create and freezes
+// them onto the Character. float32 preserves wire fidelity with the Unity
+// client (C# float).
+message Stats {
+  float hp = 1;
+  float speed = 2;
+  float atk = 3;
+  float def = 4;
+}
+
+// Character is one owned character of an account. id is the world entity
+// id once selected; accountId ties it to its owner; stats is the frozen
+// template snapshot; createdAt is ms since epoch.
+message Character {
+  string id = 1;
+  string accountId = 2;
+  string name = 3;
+  string templateId = 4;
+  Stats stats = 5;
+  int64 createdAt = 6;
+}
+
+// ListCharacters asks for every character of the authenticated account.
+// The account comes from the session, so the request carries no fields.
+message ListCharacters {}
+
+// CharacterList answers ListCharacters. Empty when the account has no
+// characters (not an error).
+message CharacterList {
+  repeated Character characters = 1;
+}
+
+// CreateCharacter creates a character for the account. The server
+// validates template existence, name (trimmed 3-16, [a-zA-Z0-9_]) and
+// per-account uniqueness, then freezes the template's baseStats onto the
+// new Character.
+message CreateCharacter {
+  string templateId = 1;
+  string name = 2;
+}
+
+// CreateCharacterResponse answers CreateCharacter. On ok=true character
+// holds the persisted Character (id + stats snapshot); on ok=false
+// errorMessage explains the rejection and no state is mutated.
+message CreateCharacterResponse {
+  bool ok = 1;
+  Character character = 2;
+  string errorMessage = 3;
+}
+
+// SelectCharacter activates one of the account's characters as the
+// session's world entity. Only valid in the `selecting` phase for a
+// character owned by the account.
+message SelectCharacter {
+  string characterId = 1;
+}
+
+// SelectCharacterResponse answers SelectCharacter. On ok=true character
+// carries the selected Character (stats + templateId) and spawnPos is the
+// resolved spawn point; the session consumes both when EnterWorld is
+// received. On ok=false errorMessage explains the rejection and the
+// previously active character (if any) is unchanged.
+message SelectCharacterResponse {
+  bool ok = 1;
+  Character character = 2;
+  Vec3 spawnPos = 3;
+  string errorMessage = 4;
 }

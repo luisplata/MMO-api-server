@@ -234,6 +234,142 @@ func TestMessageRoundTrip(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "Stats",
+			msg:  &mmov1.Stats{Hp: 100, Speed: 7.5, Atk: 25.25, Def: 18.0},
+			verify: func(t *testing.T, got proto.Message) {
+				s := got.(*mmov1.Stats)
+				if s.Hp != 100 || s.Speed != 7.5 || s.Atk != 25.25 || s.Def != 18.0 {
+					t.Errorf("Stats round-trip mismatch: %+v", s)
+				}
+			},
+		},
+		{
+			name: "Character",
+			msg: &mmov1.Character{
+				Id: "c1", AccountId: "alice", Name: "hero", TemplateId: "t1",
+				Stats:     &mmov1.Stats{Hp: 100, Speed: 7.5, Atk: 25.25, Def: 18.0},
+				CreatedAt: 1_782_912_345_678,
+			},
+			verify: func(t *testing.T, got proto.Message) {
+				c := got.(*mmov1.Character)
+				if c.Id != "c1" || c.AccountId != "alice" || c.Name != "hero" || c.TemplateId != "t1" || c.CreatedAt != 1_782_912_345_678 {
+					t.Errorf("Character round-trip mismatch: %+v", c)
+				}
+				if c.Stats == nil || c.Stats.Hp != 100 || c.Stats.Speed != 7.5 || c.Stats.Atk != 25.25 || c.Stats.Def != 18.0 {
+					t.Errorf("Character.stats round-trip mismatch: %+v", c.Stats)
+				}
+			},
+		},
+		{
+			name: "ListCharacters",
+			msg:  &mmov1.ListCharacters{},
+			verify: func(t *testing.T, got proto.Message) {
+				if g := got.(*mmov1.ListCharacters); g == nil {
+					t.Errorf("ListCharacters decoded to nil")
+				}
+			},
+		},
+		{
+			name: "CharacterList_empty",
+			msg:  &mmov1.CharacterList{Characters: []*mmov1.Character{}},
+			verify: func(t *testing.T, got proto.Message) {
+				cl := got.(*mmov1.CharacterList)
+				if len(cl.Characters) != 0 {
+					t.Errorf("CharacterList empty round-trip has %d characters, want 0", len(cl.Characters))
+				}
+			},
+		},
+		{
+			name: "CharacterList_populated",
+			msg: &mmov1.CharacterList{Characters: []*mmov1.Character{
+				{Id: "c1", AccountId: "alice", Name: "hero", TemplateId: "t1", Stats: &mmov1.Stats{Hp: 100, Speed: 7.5, Atk: 25.25, Def: 18.0}, CreatedAt: 1_782_912_345_678},
+				{Id: "c2", AccountId: "alice", Name: "mage", TemplateId: "t2", CreatedAt: 1_782_912_345_679},
+			}},
+			verify: func(t *testing.T, got proto.Message) {
+				cl := got.(*mmov1.CharacterList)
+				if len(cl.Characters) != 2 {
+					t.Fatalf("CharacterList has %d characters, want 2", len(cl.Characters))
+				}
+				if cl.Characters[0].Id != "c1" || cl.Characters[0].Name != "hero" || cl.Characters[0].TemplateId != "t1" ||
+					cl.Characters[0].Stats == nil || cl.Characters[0].Stats.Hp != 100 {
+					t.Errorf("CharacterList[0] round-trip mismatch: %+v", cl.Characters[0])
+				}
+				if cl.Characters[1].Id != "c2" || cl.Characters[1].Name != "mage" || cl.Characters[1].TemplateId != "t2" || cl.Characters[1].Stats != nil {
+					t.Errorf("CharacterList[1] round-trip mismatch: %+v", cl.Characters[1])
+				}
+			},
+		},
+		{
+			name: "CreateCharacter",
+			msg:  &mmov1.CreateCharacter{TemplateId: "t1", Name: "hero"},
+			verify: func(t *testing.T, got proto.Message) {
+				c := got.(*mmov1.CreateCharacter)
+				if c.TemplateId != "t1" || c.Name != "hero" {
+					t.Errorf("CreateCharacter round-trip mismatch: %+v", c)
+				}
+			},
+		},
+		{
+			name: "CreateCharacterResponse",
+			msg: &mmov1.CreateCharacterResponse{
+				Ok: true,
+				Character: &mmov1.Character{Id: "c1", AccountId: "alice", Name: "hero", TemplateId: "t1",
+					Stats: &mmov1.Stats{Hp: 100, Speed: 7.5, Atk: 25.25, Def: 18.0}, CreatedAt: 1_782_912_345_678},
+			},
+			verify: func(t *testing.T, got proto.Message) {
+				r := got.(*mmov1.CreateCharacterResponse)
+				if !r.Ok {
+					t.Errorf("CreateCharacterResponse.ok = false, want true")
+				}
+				if r.Character == nil || r.Character.Id != "c1" || r.Character.Name != "hero" ||
+					r.Character.Stats == nil || r.Character.Stats.Atk != 25.25 {
+					t.Errorf("CreateCharacterResponse.character round-trip mismatch: %+v", r.Character)
+				}
+			},
+		},
+		{
+			name: "CreateCharacterResponse_error",
+			msg:  &mmov1.CreateCharacterResponse{Ok: false, ErrorMessage: "name taken"},
+			verify: func(t *testing.T, got proto.Message) {
+				r := got.(*mmov1.CreateCharacterResponse)
+				if r.Ok || r.ErrorMessage != "name taken" || r.Character != nil {
+					t.Errorf("CreateCharacterResponse error round-trip mismatch: %+v", r)
+				}
+			},
+		},
+		{
+			name: "SelectCharacter",
+			msg:  &mmov1.SelectCharacter{CharacterId: "c1"},
+			verify: func(t *testing.T, got proto.Message) {
+				s := got.(*mmov1.SelectCharacter)
+				if s.CharacterId != "c1" {
+					t.Errorf("SelectCharacter.characterId = %q, want c1", s.CharacterId)
+				}
+			},
+		},
+		{
+			name: "SelectCharacterResponse",
+			msg: &mmov1.SelectCharacterResponse{
+				Ok: true,
+				Character: &mmov1.Character{Id: "c1", AccountId: "alice", Name: "hero", TemplateId: "t1",
+					Stats: &mmov1.Stats{Hp: 100, Speed: 7.5, Atk: 25.25, Def: 18.0}, CreatedAt: 1_782_912_345_678},
+				SpawnPos: &mmov1.Vec3{X: 12.5, Y: 3.25, Z: -8.25},
+			},
+			verify: func(t *testing.T, got proto.Message) {
+				r := got.(*mmov1.SelectCharacterResponse)
+				if !r.Ok {
+					t.Errorf("SelectCharacterResponse.ok = false, want true")
+				}
+				if r.Character == nil || r.Character.Id != "c1" || r.Character.TemplateId != "t1" ||
+					r.Character.Stats == nil || r.Character.Stats.Def != 18.0 {
+					t.Errorf("SelectCharacterResponse.character round-trip mismatch: %+v", r.Character)
+				}
+				if r.SpawnPos == nil || r.SpawnPos.X != 12.5 || r.SpawnPos.Y != 3.25 || r.SpawnPos.Z != -8.25 {
+					t.Errorf("SelectCharacterResponse.spawnPos round-trip mismatch: %+v", r.SpawnPos)
+				}
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -293,10 +429,12 @@ func TestUnknownFieldPreservation_AdditiveMinorBump(t *testing.T) {
 // impossible to network the camera rotation). In v2, pos.Y is the
 // server-derived terrain height (never client-supplied); the field set is
 // pinned exactly, so accidental additions or shape regressions fail this
-// test.
+// test. templateId (field 5) is the additive character-template hint (spec
+// world-protocol): it appears in character entities and is never a
+// pitch/roll field.
 func TestEntityStateShapeNoPitchRoll(t *testing.T) {
 	fields := (&mmov1.EntityState{}).ProtoReflect().Descriptor().Fields()
-	want := []string{"id", "pos", "velocity", "yaw"}
+	want := []string{"id", "pos", "velocity", "yaw", "templateId"}
 	if fields.Len() != len(want) {
 		t.Fatalf("EntityState has %d fields, want exactly %d (%v)", fields.Len(), len(want), want)
 	}
