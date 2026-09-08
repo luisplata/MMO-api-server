@@ -488,15 +488,12 @@ func requireUDP[T proto.Message](t *testing.T, c *client, what string, opt ...fu
 	}
 }
 
-// enterWorld drives one client through the whole TCP lifecycle (spec R10
-// happy path, design D4 selecting phase): Hello→ServerInfo,
-// AuthRequest→AuthResponse (no spawn), CreateCharacter→
-// CreateCharacterResponse, SelectCharacter→SelectCharacterResponse (the
-// resolved spawn), EnterWorld→empty ack WorldSnapshot→REAL WorldSnapshot
-// carrying the current world. It returns the AuthResponse (identity,
-// token), the selected character's spawn, the selected CHARACTER id (the
-// world entity id, design D3), and the real WorldSnapshot.
-func (c *client) enterWorld(t *testing.T, username string) (*mmov1.AuthResponse, *mmov1.Vec3, string, *mmov1.WorldSnapshot) {
+// connectAndAuth drives one client through the TCP handshake to the
+// `selecting` phase (design D4): Hello→ServerInfo, AuthRequest→
+// AuthResponse (no spawn). It returns the AuthResponse and leaves the
+// session in `selecting`, where List/Create/Select are the only valid
+// messages and EnterWorld is rejected until a character is chosen.
+func (c *client) connectAndAuth(t *testing.T, username string) *mmov1.AuthResponse {
 	t.Helper()
 
 	c.sendTCP(t, &mmov1.Hello{ProtoVer: protoVersion})
@@ -526,13 +523,63 @@ func (c *client) enterWorld(t *testing.T, username string) (*mmov1.AuthResponse,
 	if ar.SpawnPos != nil {
 		t.Errorf("%s: AuthResponse.SpawnPos = %v, want nil (resolved by Select, design D4)", c.name, ar.SpawnPos)
 	}
+	return ar
+}
+
+// listCharacters sends ListCharacters and returns the response.
+func (c *client) listCharacters(t *testing.T) *mmov1.CharacterList {
+	t.Helper()
+	c.sendTCP(t, &mmov1.ListCharacters{})
+	return requireTCP[*mmov1.CharacterList](t, c, "CharacterList")
+}
+
+// createCharacter sends CreateCharacter and returns the response.
+func (c *client) createCharacter(t *testing.T, templateID, name string) *mmov1.CreateCharacterResponse {
+	t.Helper()
+	c.sendTCP(t, &mmov1.CreateCharacter{TemplateId: templateID, Name: name})
+	return requireTCP[*mmov1.CreateCharacterResponse](t, c, "CreateCharacterResponse")
+}
+
+// selectCharacter sends SelectCharacter and returns the response.
+func (c *client) selectCharacter(t *testing.T, charID string) *mmov1.SelectCharacterResponse {
+	t.Helper()
+	c.sendTCP(t, &mmov1.SelectCharacter{CharacterId: charID})
+	return requireTCP[*mmov1.SelectCharacterResponse](t, c, "SelectCharacterResponse")
+}
+
+// enterWorld drives one client through the whole TCP lifecycle (spec R10
+// happy path, design D4 selecting phase): Hello→ServerInfo,
+// AuthRequest→AuthResponse (no spawn), CreateCharacter→
+// CreateCharacterResponse, SelectCharacter→SelectCharacterResponse (the
+// resolved spawn), EnterWorld→empty ack WorldSnapshot→REAL WorldSnapshot
+// carrying the current world. It returns the AuthResponse (identity,
+// token), the selected character's spawn, the selected CHARACTER id (the
+// world entity id, design D3), and the real WorldSnapshot.
+//
+// Design D5 (templateId): the created Character, the SelectCharacter
+// response and the returned WorldSnapshot's entity for the selected
+// character all carry the character's templateId — the client picks the
+// visual prefab from it. `templateID`/`name` parameterize the created
+// character so callers can triangulate that the templateId is derived
+// from the chosen template, not a hardcoded constant.
+func (c *client) enterWorld(t *testing.T, username, templateID, name string) (*mmov1.AuthResponse, *mmov1.Vec3, string, *mmov1.WorldSnapshot) {
+	t.Helper()
+
+	ar := c.connectAndAuth(t, username)
+
+	// Spec "List characters": a fresh account lists an empty CharacterList
+	// (not an error) before any character is created — the first step of
+	// the selecting flow.
+	if cl := c.listCharacters(t); len(cl.Characters) != 0 {
+		t.Errorf("%s: fresh account CharacterList = %d chars, want 0", c.name, len(cl.Characters))
+	}
 
 	// Selecting phase (design D4): create a character then select it. The
 	// name is per-account unique; each client enters the world once.
-	c.sendTCP(t, &mmov1.CreateCharacter{TemplateId: "warrior", Name: "hero"})
-	cc := requireTCP[*mmov1.CreateCharacterResponse](t, c, "CreateCharacterResponse", func(cc *mmov1.CreateCharacterResponse) bool {
-		return cc.Ok
-	})
+	cc := c.createCharacter(t, templateID, name)
+	if !cc.Ok {
+		t.Fatalf("%s: CreateCharacter failed: %s", c.name, cc.ErrorMessage)
+	}
 	if cc.Character == nil {
 		t.Fatalf("%s: CreateCharacterResponse.Character is nil", c.name)
 	}
@@ -540,10 +587,15 @@ func (c *client) enterWorld(t *testing.T, username string) (*mmov1.AuthResponse,
 	if charID == "" {
 		t.Fatalf("%s: CreateCharacterResponse.Character.Id is empty", c.name)
 	}
-	c.sendTCP(t, &mmov1.SelectCharacter{CharacterId: charID})
-	sc := requireTCP[*mmov1.SelectCharacterResponse](t, c, "SelectCharacterResponse", func(sc *mmov1.SelectCharacterResponse) bool {
-		return sc.Ok
-	})
+	// The created character carries the frozen template stats + templateId
+	// (design D2/D5) of the template it was created from.
+	if cc.Character.TemplateId != templateID {
+		t.Errorf("%s: created Character.TemplateId = %q, want %q", c.name, cc.Character.TemplateId, templateID)
+	}
+	sc := c.selectCharacter(t, charID)
+	if !sc.Ok {
+		t.Fatalf("%s: SelectCharacter failed: %s", c.name, sc.ErrorMessage)
+	}
 	if sc.SpawnPos == nil {
 		t.Fatalf("%s: SelectCharacterResponse.SpawnPos is nil", c.name)
 	}
@@ -567,6 +619,11 @@ func (c *client) enterWorld(t *testing.T, username string) (*mmov1.AuthResponse,
 	// id. The real WorldSnapshot must carry the character.
 	if findEntity(ws.Entities, charID) == nil {
 		t.Fatalf("%s: real WorldSnapshot does not contain character %q (entity id): %v", c.name, charID, entityIDs(ws.Entities))
+	}
+	// Design D5: the snapshot's EntityState carries the character's
+	// templateId — the Unity client selects the visual model from it.
+	if e := findEntity(ws.Entities, charID); e.TemplateId != templateID {
+		t.Errorf("%s: real WorldSnapshot entity %q templateId = %q, want %q", c.name, charID, e.TemplateId, templateID)
 	}
 	return ar, sc.SpawnPos, charID, ws
 }
@@ -602,24 +659,42 @@ func TestTwoPlayersSeeEachOtherMoveEndToEnd(t *testing.T) {
 
 	reg := protocol.NewWorldRegistry()
 
+	// Triangulation (design D5): alice uses the warrior template, bob the
+	// mage template, so the templateId on each entity is provably derived
+	// from the chosen template and not a hardcoded constant.
 	a := newClient(t, reg, tcpAddr, udpAddr, "alice")
-	arA, spawnA, charIDA, _ := a.enterWorld(t, "alice")
+	arA, spawnA, charIDA, wsA := a.enterWorld(t, "alice", "warrior", "hero")
 
 	b := newClient(t, reg, tcpAddr, udpAddr, "bob")
-	arB, _, charIDB, wsB := b.enterWorld(t, "bob")
+	arB, _, charIDB, wsB := b.enterWorld(t, "bob", "mage", "hero")
+
+	// Design D5: A's real WorldSnapshot entity for her character carries
+	// the character's templateId (the visual-prefab hint for Unity).
+	if e := findEntity(wsA.Entities, charIDA); e == nil {
+		t.Fatalf("alice: real WorldSnapshot lacks %q (her character): %v", charIDA, entityIDs(wsA.Entities))
+	} else if e.TemplateId != "warrior" {
+		t.Errorf("alice: real WorldSnapshot entity %q templateId = %q, want warrior", charIDA, e.TemplateId)
+	}
 
 	// B's real WorldSnapshot (full state) already contains A's character,
 	// which entered first — B sees A over TCP before A ever moves.
 	if e := findEntity(wsB.Entities, charIDA); e == nil {
 		t.Fatalf("bob: real WorldSnapshot lacks %q (A's character): %v", charIDA, entityIDs(wsB.Entities))
+	} else if e.TemplateId != "warrior" {
+		t.Errorf("bob: real WorldSnapshot entity %q templateId = %q, want warrior", charIDA, e.TemplateId)
 	}
 
 	// Interest fanout over TCP (spec S18.2, design D4): A is notified
 	// that B's character spawned — the flat resolver announces the
-	// newcomer to everyone else.
-	requireTCP[*mmov1.SpawnEntity](t, a, "SpawnEntity B", func(sp *mmov1.SpawnEntity) bool {
+	// newcomer to everyone else. The SpawnEntity state also carries the
+	// templateId (design D5), which for bob is the mage template — proving
+	// the value follows the spawned character, not the observer.
+	spawnB := requireTCP[*mmov1.SpawnEntity](t, a, "SpawnEntity B", func(sp *mmov1.SpawnEntity) bool {
 		return sp.EntityId == charIDB
 	})
+	if spawnB.State == nil || spawnB.State.TemplateId != "mage" {
+		t.Errorf("alice: SpawnEntity for bob state templateId = %v, want mage", spawnB.State)
+	}
 
 	// Both clients bind their UDP peer with the raw token (spec R13).
 	a.bindUDP(t, arA.UdpToken)
@@ -632,6 +707,12 @@ func TestTwoPlayersSeeEachOtherMoveEndToEnd(t *testing.T) {
 	alice0 := findEntity(first.Entities, charIDA)
 	if alice0 == nil {
 		t.Fatalf("bob: first snapshot lacks %q (A's character): %v", charIDA, entityIDs(first.Entities))
+	}
+	// Design D5: the UDP Snapshot EntityState also carries the character's
+	// templateId, so a client that receives only snapshots can still pick
+	// the visual prefab.
+	if alice0.TemplateId != "warrior" {
+		t.Errorf("bob: alice templateId in first snapshot = %q, want warrior", alice0.TemplateId)
 	}
 	if alice0.Pos == nil || alice0.Pos.X != spawnA.X || alice0.Pos.Z != spawnA.Z {
 		t.Errorf("bob: alice before moving = pos %v, want spawn (%v, %v)", alice0.Pos, spawnA.X, spawnA.Z)
@@ -677,6 +758,85 @@ func TestTwoPlayersSeeEachOtherMoveEndToEnd(t *testing.T) {
 		alice1.Pos.X, alice1.Pos.Y, alice1.Pos.Z, alice1.Yaw, moved.Seq, spawnA.X, spawnA.Y, spawnA.Z)
 }
 
+// TestSelectingPhaseRejections pins the character-management rejections
+// (spec character-management, design D4): a bad/invalid template Create,
+// a duplicate-name Create and a wrong-owner Select must each be answered
+// with a not-ok response over TCP and must NOT mutate the session's
+// active character. It drives two real clients to the `selecting` phase
+// (no EnterWorld) and exercises each rejection over the wire — the same
+// server instance the gate uses, proving the session layer rejects
+// without closing the session.
+func TestSelectingPhaseRejections(t *testing.T) {
+	tcpAddr, udpAddr, shutdown := startServer(t)
+	t.Cleanup(shutdown)
+
+	reg := protocol.NewWorldRegistry()
+	alice := newClient(t, reg, tcpAddr, udpAddr, "alice")
+	alice.connectAndAuth(t, "alice")
+
+	// Bad/invalid template: CreateCharacter with a template id that does
+	// not exist in the catalog → not-ok, nothing created, no mutation.
+	bad := alice.createCharacter(t, "nope", "BadChar")
+	if bad.Ok {
+		t.Errorf("alice: CreateCharacter with unknown template = ok, want not-ok")
+	}
+	if bad.ErrorMessage == "" {
+		t.Errorf("alice: CreateCharacter with unknown template has empty ErrorMessage")
+	}
+	if bad.Character != nil {
+		t.Errorf("alice: CreateCharacter with unknown template created a character: %+v", bad.Character)
+	}
+
+	// Duplicate name: create "hero", then try "Hero" again (per-account
+	// uniqueness is case-insensitive, design D7).
+	first := alice.createCharacter(t, "warrior", "hero")
+	if !first.Ok {
+		t.Fatalf("alice: first CreateCharacter failed: %s", first.ErrorMessage)
+	}
+	if first.Character == nil {
+		t.Fatalf("alice: first CreateCharacter returned no character")
+	}
+	// Spec "List characters": after a successful Create the account lists
+	// exactly its character — the non-empty counterpart of the empty list
+	// asserted in enterWorld, proving the list flow end-to-end.
+	if cl := alice.listCharacters(t); len(cl.Characters) != 1 {
+		t.Errorf("alice: CharacterList after create = %d chars, want 1", len(cl.Characters))
+	}
+	dup := alice.createCharacter(t, "warrior", "Hero")
+	if dup.Ok {
+		t.Errorf("alice: duplicate-name CreateCharacter = ok, want not-ok")
+	}
+	if dup.ErrorMessage == "" {
+		t.Errorf("alice: duplicate-name CreateCharacter has empty ErrorMessage")
+	}
+	if dup.Character != nil {
+		t.Errorf("alice: duplicate-name CreateCharacter created a character: %+v", dup.Character)
+	}
+
+	// Wrong-owner Select: bob creates his own character, then alice tries
+	// to select it. The session must answer not-ok and leave alice's
+	// active character unchanged.
+	bob := newClient(t, reg, tcpAddr, udpAddr, "bob")
+	bob.connectAndAuth(t, "bob")
+	bobChar := bob.createCharacter(t, "warrior", "hero")
+	if !bobChar.Ok {
+		t.Fatalf("bob: CreateCharacter failed: %s", bobChar.ErrorMessage)
+	}
+	if bobChar.Character == nil {
+		t.Fatalf("bob: CreateCharacter returned no character")
+	}
+
+	// alice is still in selecting (she never selected her own character).
+	// Selecting bob's character must be rejected as not-owned.
+	foreign := alice.selectCharacter(t, bobChar.Character.Id)
+	if foreign.Ok {
+		t.Errorf("alice: SelectCharacter of bob's character = ok, want not-ok")
+	}
+	if foreign.ErrorMessage == "" {
+		t.Errorf("alice: SelectCharacter of bob's character has empty ErrorMessage")
+	}
+}
+
 // TestChannelSeparationAndNoKCPWrapper pins spec R9 (S9.1/S9.2): the TCP
 // channel carries lifecycle (handshake, auth, spawn/despawn), the UDP
 // channel carries MoveInput + snapshots, and every datagram is a raw v1
@@ -687,9 +847,9 @@ func TestChannelSeparationAndNoKCPWrapper(t *testing.T) {
 
 	reg := protocol.NewWorldRegistry()
 	a := newClient(t, reg, tcpAddr, udpAddr, "alice")
-	arA, _, _, _ := a.enterWorld(t, "alice")
+	arA, _, _, _ := a.enterWorld(t, "alice", "warrior", "hero")
 	b := newClient(t, reg, tcpAddr, udpAddr, "bob")
-	arB, _, charIDB, _ := b.enterWorld(t, "bob")
+	arB, _, charIDB, _ := b.enterWorld(t, "bob", "warrior", "hero")
 
 	// Lifecycle + interest over TCP: A is notified that B's character
 	// spawned (design D3 — the fanout uses the character id).
