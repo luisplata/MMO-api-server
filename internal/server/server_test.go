@@ -107,8 +107,10 @@ func newTestServer(t *testing.T) *Server {
 }
 
 // newInWorldSession drives a session through the full handshake over a
-// mock transport (spec S10.1 happy path) so tests start from steady
-// state. The dev authenticator returns username as the player id.
+// mock transport (spec S10.1 happy path, design D4 selecting phase) so
+// tests start from steady state. The dev authenticator returns username
+// as the player id; the session selects a seeded character before
+// EnterWorld.
 func newInWorldSession(t *testing.T, reg *protocol.Registry, username string) *session.Session {
 	t.Helper()
 	sess, err := session.NewSession(reg, &mockTransport{}, session.Config{
@@ -117,6 +119,9 @@ func newInWorldSession(t *testing.T, reg *protocol.Registry, username string) *s
 		TickRate:    game.TickRate,
 		Auth:        devAuthenticator{enabled: true, spawn: game.Vec2{}},
 		Now:         time.Now,
+		Templates:   testTemplateRepo(),
+		Characters:  testCharacterRepo(username),
+		Spawn:       &fakeSpawnResolver{spawn: mmov1.Vec3{X: 1, Y: 0, Z: 2}},
 	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -124,6 +129,7 @@ func newInWorldSession(t *testing.T, reg *protocol.Registry, username string) *s
 	steps := []proto.Message{
 		&mmov1.Hello{ProtoVer: testVersion},
 		&mmov1.AuthRequest{Username: username, Password: "pw"},
+		&mmov1.SelectCharacter{CharacterId: testCharID},
 		&mmov1.EnterWorld{},
 	}
 	for _, msg := range steps {
@@ -199,24 +205,29 @@ func TestEnterWorldRegistersAndSendsRealSnapshot(t *testing.T) {
 		TickRate:    game.TickRate,
 		Auth:        srv.auth,
 		Now:         time.Now,
+		Templates:   testTemplateRepo(),
+		Characters:  testCharacterRepo("alice"),
+		Spawn:       &fakeSpawnResolver{spawn: mmov1.Vec3{X: 1, Y: 0, Z: 2}},
 	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
 
-	// Drive the handshake; each reply is drained by the reader.
+	// Drive the handshake (design D4: select a character before
+	// EnterWorld); each reply is drained by the reader.
 	for _, msg := range []proto.Message{
 		&mmov1.Hello{ProtoVer: testVersion},
 		&mmov1.AuthRequest{Username: "alice", Password: "pw"},
+		&mmov1.SelectCharacter{CharacterId: testCharID},
 		&mmov1.EnterWorld{},
 	} {
 		if err := sess.HandleTCP(clientFrame(t, srv.reg, msg, 0, 0)); err != nil {
 			t.Fatalf("HandleTCP(%T): %v", msg, err)
 		}
 	}
-	// Consume ServerInfo, AuthResponse and the empty handshake
-	// WorldSnapshot.
-	for i := 0; i < 3; i++ {
+	// Consume ServerInfo, AuthResponse, SelectCharacterResponse and the
+	// empty handshake WorldSnapshot.
+	for i := 0; i < 4; i++ {
 		nextFrame(t, frames)
 	}
 

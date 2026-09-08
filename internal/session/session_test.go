@@ -19,8 +19,11 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/luisplata/mmo-api-server/internal/character"
 	"github.com/luisplata/mmo-api-server/internal/network"
 	"github.com/luisplata/mmo-api-server/internal/protocol"
+	"github.com/luisplata/mmo-api-server/internal/stats"
+	"github.com/luisplata/mmo-api-server/internal/template"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
@@ -97,6 +100,18 @@ func newTestSession(t *testing.T, mut func(*Config)) (*Session, *mockTransport, 
 			spawn:    mmov1.Vec3{X: 1.5, Y: 0, Z: -2.5},
 		},
 		Now: clock.Now,
+		// The character-management repositories (design D1/D4) are seeded
+		// so the inWorld helper can select a character and the flow tests
+		// can exercise List/Create/Select without the server wiring.
+		Templates: &fakeTemplateRepo{templates: map[string]*template.Template{
+			"warrior": {ID: "warrior", Name: "Guerrero", BaseStats: stats.Stats{HP: 120, Speed: 3, Atk: 10, Def: 8}},
+			"mage":    {ID: "mage", Name: "Mago", BaseStats: stats.Stats{HP: 80, Speed: 4, Atk: 14, Def: 4}},
+		}},
+		Characters: &fakeCharacterRepo{chars: []*character.Character{
+			{ID: testCharID, AccountID: "p1", Name: "Hero", TemplateID: "warrior",
+				Stats: stats.Stats{HP: 120, Speed: 3, Atk: 10, Def: 8}, CreatedAt: clock.cur},
+		}},
+		Spawn: &fakeSpawnResolver{spawn: mmov1.Vec3{X: 1.5, Y: 0, Z: -2.5}},
 	}
 	if mut != nil {
 		mut(&cfg)
@@ -175,16 +190,19 @@ func inWorld(t *testing.T, s *Session, reg *protocol.Registry) {
 	t.Helper()
 	sendHello(t, s, reg)
 	sendAuth(t, s, reg)
+	sendSelect(t, s, reg, testCharID)
 	sendEnterWorld(t, s, reg)
 }
 
 // --- tests ---------------------------------------------------------------
 
 // TestHandshakeHappyPath covers S10.1 end to end: the session advances
-// connecting → handshaking → authenticating → entering → in-world and
-// emits ServerInfo (protoVer/tickRate/serverTime), AuthResponse
-// (ok/playerId/spawnPos/udpToken) and a needs-ack WorldSnapshot — all
-// over the mocked transport, which must never be closed.
+// connecting → handshaking → authenticating → selecting → entering →
+// in-world (design D4 inserts the selecting phase) and emits ServerInfo
+// (protoVer/tickRate/serverTime), AuthResponse (ok/playerId/udpToken — no
+// spawn, design D4), SelectCharacterResponse (spawn+stats+templateId) and
+// a needs-ack WorldSnapshot — all over the mocked transport, which must
+// never be closed.
 func TestHandshakeHappyPath(t *testing.T) {
 	s, tr, clock := newTestSession(t, nil)
 	reg := protocol.NewWorldRegistry()
@@ -219,10 +237,12 @@ func TestHandshakeHappyPath(t *testing.T) {
 		t.Errorf("ServerInfo must not request an ack (reliable channel)")
 	}
 
-	// 2. AuthRequest → AuthResponse ok (S10.1 second leg, S12.1).
+	// 2. AuthRequest → AuthResponse ok (S10.1 second leg, S12.1). The
+	// session enters the SELECTING phase, and AuthResponse no longer
+	// carries a spawn — it is resolved by SelectCharacter (design D4).
 	sendAuth(t, s, reg)
-	if s.State() != StateEntering {
-		t.Errorf("after auth state = %s, want entering", s.State())
+	if s.State() != StateSelecting {
+		t.Errorf("after auth state = %s, want selecting", s.State())
 	}
 	_, msg = sentFrame(t, reg, tr, 1)
 	ar, ok := msg.(*mmov1.AuthResponse)
@@ -235,14 +255,34 @@ func TestHandshakeHappyPath(t *testing.T) {
 	if ar.PlayerId != "p1" {
 		t.Errorf("AuthResponse.PlayerId = %q, want %q", ar.PlayerId, "p1")
 	}
-	if ar.SpawnPos == nil || ar.SpawnPos.X != 1.5 || ar.SpawnPos.Y != 0 || ar.SpawnPos.Z != -2.5 {
-		t.Errorf("AuthResponse.SpawnPos = %v, want (1.5, 0, -2.5)", ar.SpawnPos)
+	if ar.SpawnPos != nil {
+		t.Errorf("AuthResponse.SpawnPos = %v, want nil (spawn resolved by Select, design D4)", ar.SpawnPos)
 	}
 	if len(ar.UdpToken) == 0 {
 		t.Errorf("AuthResponse.UdpToken is empty, want a fresh token")
 	}
 
-	// 3. EnterWorld → WorldSnapshot, then steady state (S10.1 third leg).
+	// 3. SelectCharacter → SelectCharacterResponse; selecting → entering.
+	sendSelect(t, s, reg, testCharID)
+	if s.State() != StateEntering {
+		t.Errorf("after select state = %s, want entering", s.State())
+	}
+	_, msg = sentFrame(t, reg, tr, 2)
+	sc, ok := msg.(*mmov1.SelectCharacterResponse)
+	if !ok {
+		t.Fatalf("frame 2 = %T, want SelectCharacterResponse", msg)
+	}
+	if !sc.Ok {
+		t.Fatalf("SelectCharacterResponse.Ok = false, want true (err=%q)", sc.ErrorMessage)
+	}
+	if sc.Character == nil || sc.Character.Id != testCharID {
+		t.Errorf("SelectCharacterResponse.Character = %+v, want id %q", sc.Character, testCharID)
+	}
+	if sc.SpawnPos == nil || sc.SpawnPos.X != 1.5 || sc.SpawnPos.Y != 0 || sc.SpawnPos.Z != -2.5 {
+		t.Errorf("SelectCharacterResponse.SpawnPos = %v, want (1.5, 0, -2.5)", sc.SpawnPos)
+	}
+
+	// 4. EnterWorld → WorldSnapshot, then steady state (S10.1 third leg).
 	// The client marks EnterWorld needs-ack with its own seq; the server
 	// must answer with the WorldSnapshot AND an Ack (D5: ack receipt).
 	if err := s.HandleTCP(clientFrame(t, reg, &mmov1.EnterWorld{}, protocol.FlagNeedsAck, 10)); err != nil {
@@ -251,10 +291,10 @@ func TestHandshakeHappyPath(t *testing.T) {
 	if s.State() != StateInWorld {
 		t.Errorf("after EnterWorld state = %s, want in-world", s.State())
 	}
-	env, msg = sentFrame(t, reg, tr, 2)
+	env, msg = sentFrame(t, reg, tr, 3)
 	ws, ok := msg.(*mmov1.WorldSnapshot)
 	if !ok {
-		t.Fatalf("frame 2 = %T, want WorldSnapshot", msg)
+		t.Fatalf("frame 3 = %T, want WorldSnapshot", msg)
 	}
 	_ = ws
 	if env.Flags&protocol.FlagNeedsAck == 0 {
@@ -264,10 +304,10 @@ func TestHandshakeHappyPath(t *testing.T) {
 		t.Errorf("WorldSnapshot seq = %d, want 1 (first needs-ack frame)", env.Seq)
 	}
 	// The needs-ack EnterWorld is acknowledged with the client's seq.
-	env, msg = sentFrame(t, reg, tr, 3)
+	env, msg = sentFrame(t, reg, tr, 4)
 	ack, ok := msg.(*mmov1.Ack)
 	if !ok {
-		t.Fatalf("frame 3 = %T, want Ack for the needs-ack EnterWorld", msg)
+		t.Fatalf("frame 4 = %T, want Ack for the needs-ack EnterWorld", msg)
 	}
 	if ack.Seq != 10 {
 		t.Errorf("Ack.Seq = %d, want 10 (echo of the EnterWorld seq)", ack.Seq)
@@ -537,7 +577,7 @@ func TestCloseFromAnyState(t *testing.T) {
 	}{
 		{"connecting", func(t *testing.T, s *Session, reg *protocol.Registry) {}},
 		{"handshaking", sendHello},
-		{"entering", func(t *testing.T, s *Session, reg *protocol.Registry) { sendHello(t, s, reg); sendAuth(t, s, reg) }},
+		{"selecting", func(t *testing.T, s *Session, reg *protocol.Registry) { sendHello(t, s, reg); sendAuth(t, s, reg) }},
 		{"in-world", inWorld},
 	}
 	for _, tc := range setups {

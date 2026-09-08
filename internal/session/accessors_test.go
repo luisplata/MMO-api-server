@@ -47,12 +47,19 @@ func TestSessionAccessors(t *testing.T) {
 	// wantVer: the newTestSession config supports [1,9] and the client
 	// negotiates testVersion (7); before negotiation WireVersion falls
 	// back to MaxProtoVer (9).
+	//
+	// SpawnPos (the auth spawn) is no longer populated after auth (design
+	// D4): spawn is resolved by SelectCharacter and exposed via
+	// CharacterSpawn. ActiveCharacterID/CharacterSpawn are empty/nil until
+	// a successful SelectCharacter.
 	cases := []struct {
-		name       string
-		setup      func(t *testing.T, s *Session, reg *protocol.Registry)
-		wantVer    uint16
-		wantPlayer string
-		wantSpawn  *mmov1.Vec3
+		name          string
+		setup         func(t *testing.T, s *Session, reg *protocol.Registry)
+		wantVer       uint16
+		wantPlayer    string
+		wantSpawn     *mmov1.Vec3
+		wantActiveID  string
+		wantCharSpawn *mmov1.Vec3
 	}{
 		{
 			name:       "fresh session",
@@ -69,11 +76,13 @@ func TestSessionAccessors(t *testing.T) {
 			wantSpawn:  nil,
 		},
 		{
-			name:       "in-world after auth",
-			setup:      inWorld,
-			wantVer:    testVersion,
-			wantPlayer: "p1",
-			wantSpawn:  &mmov1.Vec3{X: 1.5, Y: 0, Z: -2.5},
+			name:          "in-world after auth + select",
+			setup:         inWorld,
+			wantVer:       testVersion,
+			wantPlayer:    "p1",
+			wantSpawn:     nil,
+			wantActiveID:  testCharID,
+			wantCharSpawn: &mmov1.Vec3{X: 1.5, Y: 0, Z: -2.5},
 		},
 		{
 			name: "failed auth leaves accessors empty",
@@ -102,6 +111,10 @@ func TestSessionAccessors(t *testing.T) {
 				t.Errorf("PlayerID() = %q, want %q", got, tc.wantPlayer)
 			}
 			assertSpawn(t, s.SpawnPos(), tc.wantSpawn)
+			if got := s.ActiveCharacterID(); got != tc.wantActiveID {
+				t.Errorf("ActiveCharacterID() = %q, want %q", got, tc.wantActiveID)
+			}
+			assertSpawn(t, s.CharacterSpawn(), tc.wantCharSpawn)
 		})
 	}
 }

@@ -9,10 +9,13 @@ import "errors"
 // State is a session's lifecycle phase (spec R11). A session progresses
 // through the machine in order:
 //
-//	connecting → handshaking → authenticating → entering → in-world
+//	connecting → handshaking → authenticating → selecting → entering → in-world
 //
 // and may jump to closed from ANY live state (S11.2); closed is
-// absorbing.
+// absorbing. The `selecting` phase (design D4) sits between
+// authenticating and entering: after auth the player lists/creates/
+// selects a character, and only a successful SelectCharacter moves the
+// session to entering.
 type State uint8
 
 const (
@@ -23,8 +26,12 @@ const (
 	StateHandshaking
 	// StateAuthenticating follows an AuthRequest being processed.
 	StateAuthenticating
-	// StateEntering follows a successful AuthResponse; the server waits
-	// for the client's EnterWorld before entering the world.
+	// StateSelecting follows a successful AuthResponse (design D4): the
+	// session waits for the client to list/create/select a character.
+	// List/Create/Select are only valid here; EnterWorld is rejected.
+	StateSelecting
+	// StateEntering follows a successful SelectCharacter (design D4); the
+	// server waits for the client's EnterWorld before entering the world.
 	StateEntering
 	// StateInWorld is steady state: the client has received its
 	// WorldSnapshot and the UDP binding may be established.
@@ -39,6 +46,7 @@ var stateNames = [...]string{
 	StateConnecting:     "connecting",
 	StateHandshaking:    "handshaking",
 	StateAuthenticating: "authenticating",
+	StateSelecting:      "selecting",
 	StateEntering:       "entering",
 	StateInWorld:        "in-world",
 	StateClosed:         "closed",
@@ -63,7 +71,8 @@ var ErrIllegalTransition = errors.New("session: illegal state transition")
 var legalTransitions = map[State]map[State]bool{
 	StateConnecting:     {StateHandshaking: true, StateClosed: true},
 	StateHandshaking:    {StateAuthenticating: true, StateClosed: true},
-	StateAuthenticating: {StateEntering: true, StateClosed: true},
+	StateAuthenticating: {StateSelecting: true, StateClosed: true},
+	StateSelecting:      {StateEntering: true, StateClosed: true},
 	StateEntering:       {StateInWorld: true, StateClosed: true},
 	StateInWorld:        {StateClosed: true},
 	StateClosed:         {},

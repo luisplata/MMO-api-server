@@ -30,10 +30,12 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/luisplata/mmo-api-server/internal/character"
 	"github.com/luisplata/mmo-api-server/internal/game"
 	"github.com/luisplata/mmo-api-server/internal/network"
 	"github.com/luisplata/mmo-api-server/internal/protocol"
 	"github.com/luisplata/mmo-api-server/internal/server"
+	"github.com/luisplata/mmo-api-server/internal/template"
 	"github.com/luisplata/mmo-api-server/internal/world"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
@@ -98,6 +100,8 @@ func fixtureHeightfield(t *testing.T) *world.Heightfield {
 // the derived-Y hill gate is active in every test here.
 func startServer(t *testing.T) (tcpAddr, udpAddr string, shutdown func()) {
 	t.Helper()
+	templates := e2eTemplateRepo(t)
+	characters := e2eCharacterRepo(t)
 	for attempt := 0; ; attempt++ {
 		tcpAddr, udpAddr = freeLoopbackPorts(t)
 		srv, err := server.New(server.Config{
@@ -106,7 +110,9 @@ func startServer(t *testing.T) (tcpAddr, udpAddr string, shutdown func()) {
 			DevAuth:  true,
 			SpawnX:   testSpawnX, SpawnZ: testSpawnZ,
 			MinProtoVer: protoVersion, MaxProtoVer: protoVersion,
-			Heights: fixtureHeightfield(t),
+			Heights:    fixtureHeightfield(t),
+			Templates:  templates,
+			Characters: characters,
 		})
 		if err != nil {
 			t.Fatalf("server.New: %v", err)
@@ -130,6 +136,35 @@ func startServer(t *testing.T) (tcpAddr, udpAddr string, shutdown func()) {
 			return tcpAddr, udpAddr, func() { cancel(); <-done }
 		}
 	}
+}
+
+// e2eTemplateRepo loads the committed template catalog through the
+// canonical file loader (the same path the server uses), so the selecting
+// phase's CreateCharacter validates against real templates.
+func e2eTemplateRepo(t *testing.T) template.TemplateRepository {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatalf("runtime.Caller failed")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	repo, err := template.NewFileTemplateRepository(filepath.Join(root, "data", "templates.json"))
+	if err != nil {
+		t.Fatalf("load templates catalog: %v", err)
+	}
+	return repo
+}
+
+// e2eCharacterRepo builds a character store on a temp file so the E2E run
+// never pollutes the committed data/characters.json. Characters are
+// created per account at runtime (design D4 selecting phase).
+func e2eCharacterRepo(t *testing.T) character.CharacterRepository {
+	t.Helper()
+	repo, err := character.NewFileCharacterRepository(filepath.Join(t.TempDir(), "characters.json"))
+	if err != nil {
+		t.Fatalf("load character store: %v", err)
+	}
+	return repo
 }
 
 // freeLoopbackPorts finds two free loopback ports by binding :0 sockets
@@ -454,11 +489,13 @@ func requireUDP[T proto.Message](t *testing.T, c *client, what string, opt ...fu
 }
 
 // enterWorld drives one client through the whole TCP lifecycle (spec R10
-// happy path): Hello→ServerInfo, AuthRequest→AuthResponse, EnterWorld→
-// empty ack WorldSnapshot→REAL WorldSnapshot carrying the current world.
-// It returns the AuthResponse (identity, token, spawn) and the real
-// WorldSnapshot.
-func (c *client) enterWorld(t *testing.T, username string) (*mmov1.AuthResponse, *mmov1.WorldSnapshot) {
+// happy path, design D4 selecting phase): Hello→ServerInfo,
+// AuthRequest→AuthResponse (no spawn), CreateCharacter→
+// CreateCharacterResponse, SelectCharacter→SelectCharacterResponse (the
+// resolved spawn), EnterWorld→empty ack WorldSnapshot→REAL WorldSnapshot
+// carrying the current world. It returns the AuthResponse (identity,
+// token), the selected character's spawn, and the real WorldSnapshot.
+func (c *client) enterWorld(t *testing.T, username string) (*mmov1.AuthResponse, *mmov1.Vec3, *mmov1.WorldSnapshot) {
 	t.Helper()
 
 	c.sendTCP(t, &mmov1.Hello{ProtoVer: protoVersion})
@@ -484,13 +521,31 @@ func (c *client) enterWorld(t *testing.T, username string) (*mmov1.AuthResponse,
 	if len(ar.UdpToken) == 0 {
 		t.Errorf("%s: AuthResponse.UdpToken is empty", c.name)
 	}
-	if ar.SpawnPos == nil || ar.SpawnPos.X != testSpawnX || ar.SpawnPos.Z != testSpawnZ {
-		t.Errorf("%s: AuthResponse.SpawnPos = %v, want (%v, %v)", c.name, ar.SpawnPos, testSpawnX, testSpawnZ)
+	// Design D4: auth no longer resolves the spawn — SelectCharacter does.
+	if ar.SpawnPos != nil {
+		t.Errorf("%s: AuthResponse.SpawnPos = %v, want nil (resolved by Select, design D4)", c.name, ar.SpawnPos)
 	}
-	// Hill gate (task 2.8, CTH-3): spawnPos.y carries the terrain height
-	// at the spawn point — the fixture peaks at 25 there.
-	if ar.SpawnPos == nil || ar.SpawnPos.Y != 25 {
-		t.Errorf("%s: AuthResponse.SpawnPos.Y = %v, want 25 (hill peak at spawn)", c.name, ar.SpawnPos)
+
+	// Selecting phase (design D4): create a character then select it. The
+	// name is per-account unique; each client enters the world once.
+	c.sendTCP(t, &mmov1.CreateCharacter{TemplateId: "warrior", Name: "hero"})
+	cc := requireTCP[*mmov1.CreateCharacterResponse](t, c, "CreateCharacterResponse", func(cc *mmov1.CreateCharacterResponse) bool {
+		return cc.Ok
+	})
+	if cc.Character == nil {
+		t.Fatalf("%s: CreateCharacterResponse.Character is nil", c.name)
+	}
+	c.sendTCP(t, &mmov1.SelectCharacter{CharacterId: cc.Character.Id})
+	sc := requireTCP[*mmov1.SelectCharacterResponse](t, c, "SelectCharacterResponse", func(sc *mmov1.SelectCharacterResponse) bool {
+		return sc.Ok
+	})
+	if sc.SpawnPos == nil {
+		t.Fatalf("%s: SelectCharacterResponse.SpawnPos is nil", c.name)
+	}
+	// Hill gate (task 2.8, CTH-3): the resolved spawn Y carries the terrain
+	// height at the spawn point — the fixture peaks at 25 there.
+	if sc.SpawnPos.Y != 25 {
+		t.Errorf("%s: SelectCharacterResponse.SpawnPos.Y = %v, want 25 (hill peak at spawn)", c.name, sc.SpawnPos.Y)
 	}
 
 	c.sendTCP(t, &mmov1.EnterWorld{})
@@ -506,7 +561,7 @@ func (c *client) enterWorld(t *testing.T, username string) (*mmov1.AuthResponse,
 	if findEntity(ws.Entities, username) == nil {
 		t.Fatalf("%s: real WorldSnapshot does not contain %q: %v", c.name, username, entityIDs(ws.Entities))
 	}
-	return ar, ws
+	return ar, sc.SpawnPos, ws
 }
 
 // findEntity returns the entity state for id, or nil.
@@ -541,10 +596,10 @@ func TestTwoPlayersSeeEachOtherMoveEndToEnd(t *testing.T) {
 	reg := protocol.NewWorldRegistry()
 
 	a := newClient(t, reg, tcpAddr, udpAddr, "alice")
-	arA, _ := a.enterWorld(t, "alice")
+	arA, spawnA, _ := a.enterWorld(t, "alice")
 
 	b := newClient(t, reg, tcpAddr, udpAddr, "bob")
-	arB, wsB := b.enterWorld(t, "bob")
+	arB, _, wsB := b.enterWorld(t, "bob")
 
 	// B's real WorldSnapshot (full state) already contains alice, who
 	// entered first — B sees A over TCP before A ever moves.
@@ -571,11 +626,11 @@ func TestTwoPlayersSeeEachOtherMoveEndToEnd(t *testing.T) {
 	if alice0 == nil {
 		t.Fatalf("bob: first snapshot lacks alice: %v", entityIDs(first.Entities))
 	}
-	if alice0.Pos == nil || alice0.Pos.X != arA.SpawnPos.X || alice0.Pos.Z != arA.SpawnPos.Z {
-		t.Errorf("bob: alice before moving = pos %v, want spawn (%v, %v)", alice0.Pos, arA.SpawnPos.X, arA.SpawnPos.Z)
+	if alice0.Pos == nil || alice0.Pos.X != spawnA.X || alice0.Pos.Z != spawnA.Z {
+		t.Errorf("bob: alice before moving = pos %v, want spawn (%v, %v)", alice0.Pos, spawnA.X, spawnA.Z)
 	}
-	if alice0.Pos == nil || alice0.Pos.Y != arA.SpawnPos.Y {
-		t.Errorf("bob: alice before moving = y %v, want spawn y %v (terrain-derived)", alice0.Pos, arA.SpawnPos.Y)
+	if alice0.Pos == nil || alice0.Pos.Y != spawnA.Y {
+		t.Errorf("bob: alice before moving = y %v, want spawn y %v (terrain-derived)", alice0.Pos, spawnA.Y)
 	}
 	if alice0.Yaw != 0 {
 		t.Errorf("bob: alice yaw before moving = %v, want 0", alice0.Yaw)
@@ -591,11 +646,11 @@ func TestTwoPlayersSeeEachOtherMoveEndToEnd(t *testing.T) {
 	// Snapshot over UDP within the broadcast cadence (bounded 5 s).
 	moved := requireUDP[*mmov1.Snapshot](t, b, "snapshot showing alice moved", func(sn *mmov1.Snapshot) bool {
 		e := findEntity(sn.Entities, "alice")
-		return e != nil && e.Pos != nil && e.Pos.X > arA.SpawnPos.X+0.1 && e.Yaw == moveYaw
+		return e != nil && e.Pos != nil && e.Pos.X > spawnA.X+0.1 && e.Yaw == moveYaw
 	})
 	alice1 := findEntity(moved.Entities, "alice")
-	if alice1.Pos.X <= arA.SpawnPos.X {
-		t.Errorf("bob: alice did not advance: pos = %v, spawn X = %v", alice1.Pos, arA.SpawnPos.X)
+	if alice1.Pos.X <= spawnA.X {
+		t.Errorf("bob: alice did not advance: pos = %v, spawn X = %v", alice1.Pos, spawnA.X)
 	}
 	if alice1.Yaw != moveYaw {
 		t.Errorf("bob: alice yaw = %v, want %v", alice1.Yaw, moveYaw)
@@ -612,7 +667,7 @@ func TestTwoPlayersSeeEachOtherMoveEndToEnd(t *testing.T) {
 		t.Errorf("bob: alice Y = %v, want terrain %v at (%v, %v) [hill gate]", alice1.Pos.Y, wantY, alice1.Pos.X, alice1.Pos.Z)
 	}
 	t.Logf("GATE PASSED: bob saw alice at (%.2f, %.2f, %.2f) yaw %.2f rad (snapshot seq %d), spawn was (%v, %v, %v)",
-		alice1.Pos.X, alice1.Pos.Y, alice1.Pos.Z, alice1.Yaw, moved.Seq, arA.SpawnPos.X, arA.SpawnPos.Y, arA.SpawnPos.Z)
+		alice1.Pos.X, alice1.Pos.Y, alice1.Pos.Z, alice1.Yaw, moved.Seq, spawnA.X, spawnA.Y, spawnA.Z)
 }
 
 // TestChannelSeparationAndNoKCPWrapper pins spec R9 (S9.1/S9.2): the TCP
@@ -625,9 +680,9 @@ func TestChannelSeparationAndNoKCPWrapper(t *testing.T) {
 
 	reg := protocol.NewWorldRegistry()
 	a := newClient(t, reg, tcpAddr, udpAddr, "alice")
-	arA, _ := a.enterWorld(t, "alice")
+	arA, _, _ := a.enterWorld(t, "alice")
 	b := newClient(t, reg, tcpAddr, udpAddr, "bob")
-	arB, _ := b.enterWorld(t, "bob")
+	arB, _, _ := b.enterWorld(t, "bob")
 
 	// Lifecycle + interest over TCP: alice is notified that bob spawned.
 	requireTCP[*mmov1.SpawnEntity](t, a, "SpawnEntity bob", func(sp *mmov1.SpawnEntity) bool {

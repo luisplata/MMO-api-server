@@ -17,10 +17,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/luisplata/mmo-api-server/internal/character"
 	"github.com/luisplata/mmo-api-server/internal/game"
 	"github.com/luisplata/mmo-api-server/internal/network"
 	"github.com/luisplata/mmo-api-server/internal/protocol"
 	"github.com/luisplata/mmo-api-server/internal/session"
+	"github.com/luisplata/mmo-api-server/internal/template"
 	"github.com/luisplata/mmo-api-server/internal/world"
 )
 
@@ -53,6 +55,18 @@ type Config struct {
 	// HandshakeTimeout bounds the Hello→EnterWorld sequence; zero
 	// disables it.
 	HandshakeTimeout time.Duration
+
+	// Templates is the character-template catalog the session's
+	// character-management flow consults (design D1). Optional; when nil
+	// the session answers CreateCharacter with a not-ok response.
+	Templates template.TemplateRepository
+	// Characters is the character store (design D1). Optional; when nil
+	// the session answers List/Create/Select with a not-ok/empty response.
+	Characters character.CharacterRepository
+	// Spawn resolves the spawn position for a selected character (design
+	// D4). Optional; when nil the server builds a default resolver from
+	// SpawnX/SpawnZ + Heights.
+	Spawn session.SpawnResolver
 }
 
 // player ties one authenticated session to its wire resources: the
@@ -73,6 +87,14 @@ type Server struct {
 	reg  *protocol.Registry
 	sim  *game.Simulation
 	auth session.Authenticator
+
+	// templates / characters / spawn are the character-management
+	// repositories the session layer needs for the selecting phase
+	// (design D1/D4). They are injected from Config; when nil the session
+	// answers the selecting handlers with a not-ok response.
+	templates  template.TemplateRepository
+	characters character.CharacterRepository
+	spawn      session.SpawnResolver
 
 	// udp is the packet conn snapshots are sent over. It is assigned in
 	// Run before any goroutine starts and never mutated afterwards, so
@@ -105,11 +127,21 @@ func New(cfg Config) (*Server, error) {
 		return nil, errors.New("server: invalid protocol version range")
 	}
 	srv := &Server{
-		cfg:     cfg,
-		reg:     protocol.NewWorldRegistry(),
-		auth:    devAuthenticator{enabled: cfg.DevAuth, spawn: game.Vec2{X: cfg.SpawnX, Z: cfg.SpawnZ}, heights: cfg.Heights},
-		players: make(map[string]*player),
-		simOps:  make(chan simOp),
+		cfg:        cfg,
+		reg:        protocol.NewWorldRegistry(),
+		auth:       devAuthenticator{enabled: cfg.DevAuth, spawn: game.Vec2{X: cfg.SpawnX, Z: cfg.SpawnZ}, heights: cfg.Heights},
+		templates:  cfg.Templates,
+		characters: cfg.Characters,
+		players:    make(map[string]*player),
+		simOps:     make(chan simOp),
+	}
+	if cfg.Spawn == nil {
+		// Default resolver: every selected character spawns at the
+		// configured spawn point, with the terrain height in Y (design D4,
+		// spec CTH-3). Tests inject a custom resolver.
+		srv.spawn = &defaultSpawnResolver{spawnX: cfg.SpawnX, spawnZ: cfg.SpawnZ, heights: cfg.Heights}
+	} else {
+		srv.spawn = cfg.Spawn
 	}
 	sim, err := game.NewSimulation(game.SimulationConfig{Sink: srv, Heights: cfg.Heights})
 	if err != nil {
@@ -219,6 +251,9 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		Auth:             s.auth,
 		Now:              time.Now,
 		HandshakeTimeout: s.cfg.HandshakeTimeout,
+		Templates:        s.templates,
+		Characters:       s.characters,
+		Spawn:            s.spawn,
 	})
 	if err != nil {
 		_ = conn.Close()
@@ -288,7 +323,14 @@ func (s *Server) enterWorld(ctx context.Context, conn net.Conn, sess *session.Se
 	s.players[pid] = &player{sess: sess, tr: tr, tcp: conn}
 	s.mu.Unlock()
 
-	frame, err := s.registerAndSnapshot(ctx, pid, spawnFromProto(sess.SpawnPos()), sess.WireVersion())
+	// Design D4: the spawn comes from the selected character (resolved at
+	// SelectCharacter); fall back to the auth spawn for the pre-select
+	// path. The sim re-resolves the terrain height authoritatively.
+	spawn := sess.CharacterSpawn()
+	if spawn == nil {
+		spawn = sess.SpawnPos()
+	}
+	frame, err := s.registerAndSnapshot(ctx, pid, spawnFromProto(spawn), sess.WireVersion())
 	if err != nil {
 		s.mu.Lock()
 		delete(s.players, pid)

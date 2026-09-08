@@ -26,12 +26,14 @@ func TestStateTransitionTable(t *testing.T) {
 		// Legal forward progress along the defined path.
 		{"connecting to handshaking", StateConnecting, StateHandshaking, true, StateConnecting},
 		{"handshaking to authenticating", StateHandshaking, StateAuthenticating, true, StateHandshaking},
-		{"authenticating to entering", StateAuthenticating, StateEntering, true, StateAuthenticating},
+		{"authenticating to selecting", StateAuthenticating, StateSelecting, true, StateAuthenticating},
+		{"selecting to entering", StateSelecting, StateEntering, true, StateSelecting},
 		{"entering to in-world", StateEntering, StateInWorld, true, StateEntering},
 		// Close is legal from every live state (S11.2).
 		{"connecting to closed", StateConnecting, StateClosed, true, StateConnecting},
 		{"handshaking to closed", StateHandshaking, StateClosed, true, StateHandshaking},
 		{"authenticating to closed", StateAuthenticating, StateClosed, true, StateAuthenticating},
+		{"selecting to closed", StateSelecting, StateClosed, true, StateSelecting},
 		{"entering to closed", StateEntering, StateClosed, true, StateEntering},
 		{"in-world to closed", StateInWorld, StateClosed, true, StateInWorld},
 		// Illegal jumps: forward progress must pass through every
@@ -42,7 +44,12 @@ func TestStateTransitionTable(t *testing.T) {
 		{"connecting to in-world", StateConnecting, StateInWorld, false, StateConnecting},
 		{"handshaking to entering", StateHandshaking, StateEntering, false, StateHandshaking},
 		{"handshaking to in-world", StateHandshaking, StateInWorld, false, StateHandshaking},
+		{"authenticating to entering", StateAuthenticating, StateEntering, false, StateAuthenticating},
 		{"authenticating to in-world", StateAuthenticating, StateInWorld, false, StateAuthenticating},
+		{"selecting to in-world", StateSelecting, StateInWorld, false, StateSelecting},
+		{"selecting to selecting", StateSelecting, StateSelecting, false, StateSelecting},
+		{"connecting to selecting", StateConnecting, StateSelecting, false, StateConnecting},
+		{"handshaking to selecting", StateHandshaking, StateSelecting, false, StateHandshaking},
 		{"entering to handshaking", StateEntering, StateHandshaking, false, StateEntering},
 		{"entering to authenticating", StateEntering, StateAuthenticating, false, StateEntering},
 		{"in-world to authenticating", StateInWorld, StateAuthenticating, false, StateInWorld},
@@ -94,6 +101,7 @@ func TestStateStringNames(t *testing.T) {
 		{StateConnecting, "connecting"},
 		{StateHandshaking, "handshaking"},
 		{StateAuthenticating, "authenticating"},
+		{StateSelecting, "selecting"},
 		{StateEntering, "entering"},
 		{StateInWorld, "in-world"},
 		{StateClosed, "closed"},
@@ -109,7 +117,7 @@ func TestStateStringNames(t *testing.T) {
 
 // TestStateIsTerminal pins Closed as the only absorbing state.
 func TestStateIsTerminal(t *testing.T) {
-	for _, s := range []State{StateConnecting, StateHandshaking, StateAuthenticating, StateEntering, StateInWorld} {
+	for _, s := range []State{StateConnecting, StateHandshaking, StateAuthenticating, StateSelecting, StateEntering, StateInWorld} {
 		if s.IsTerminal() {
 			t.Errorf("%s must not be terminal", s)
 		}

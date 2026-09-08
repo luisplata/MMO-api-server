@@ -22,8 +22,10 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/luisplata/mmo-api-server/internal/character"
 	"github.com/luisplata/mmo-api-server/internal/network"
 	"github.com/luisplata/mmo-api-server/internal/protocol"
+	"github.com/luisplata/mmo-api-server/internal/template"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
@@ -61,6 +63,23 @@ type Config struct {
 	// Auth validates credentials (spec R12). Required.
 	Auth Authenticator
 
+	// Templates is the character-template catalog the session consults when
+	// creating characters (design D1). Required for the character-management
+	// flow; the server wiring supplies it. When nil, CreateCharacter is
+	// answered with a not-ok response.
+	Templates template.TemplateRepository
+
+	// Characters is the character store (design D1). Required for
+	// List/Create/Select; when nil those handlers are answered with a
+	// not-ok/empty response.
+	Characters character.CharacterRepository
+
+	// Spawn resolves the spawn position for a selected character (design
+	// D3/D4: Select resolves spawn + stats + templateId). Required for
+	// SelectCharacter; when nil, SelectCharacter is answered with a not-ok
+	// response.
+	Spawn SpawnResolver
+
 	// Now supplies the current time; defaults to time.Now. Injected so
 	// handshake-timeout tests are deterministic.
 	Now func() time.Time
@@ -89,6 +108,15 @@ type Authenticator interface {
 	Authenticate(username, password string) (playerID string, spawn *mmov1.Vec3, err error)
 }
 
+// SpawnResolver resolves the spawn position for a selected character
+// (design D3/D4: Select resolves spawn + stats + templateId). The server
+// layer supplies the world-aware resolver in the wiring; the session only
+// consumes the point, keeping it decoupled from the world.
+type SpawnResolver interface {
+	// SpawnFor returns the spawn position for characterID.
+	SpawnFor(characterID string) *mmov1.Vec3
+}
+
 // Session drives one client connection through the lifecycle. It owns
 // the state machine and communicates exclusively through the Transport
 // seam, so tests mock the transport instead of spinning sockets.
@@ -112,13 +140,25 @@ type Session struct {
 	udpBound bool
 	udpPeer  net.Addr
 
-	// playerID / spawnPos are the authenticated identity (spec R12),
-	// populated by a successful AuthRequest. The wiring layer (PR4b)
-	// reads them to register the player in the simulation and to send
-	// the enter-world WorldSnapshot from the spawn position. spawnPos is
-	// a Vec3 (v2) carrying the terrain height in Y.
+	// playerID is the authenticated account identity (spec R12),
+	// populated by a successful AuthRequest. spawnPos is the legacy auth
+	// spawn (design D4 no longer resolves spawn at auth — it stays nil in
+	// the character-management flow); the wiring layer reads it during the
+	// pre-PR5 transition only.
 	playerID string
 	spawnPos *mmov1.Vec3
+
+	// activeCharacter is the character selected in the `selecting` phase
+	// (design D3/D4). It is nil until a successful SelectCharacter; the
+	// world entity id is its ID, and its stats/templateId drive the
+	// spawn/EntityState. A session can only reach entering via a valid
+	// select, so EnterWorld before a character is chosen is rejected by
+	// the state machine.
+	activeCharacter *character.Character
+	// characterSpawn is the spawn position resolved at SelectCharacter
+	// time (design D4). It is consumed by the wiring layer when the player
+	// enters the world.
+	characterSpawn *mmov1.Vec3
 
 	// handshakeDeadline is now()+HandshakeTimeout at construction (or
 	// zero when timeouts are disabled).
@@ -190,11 +230,33 @@ func (s *Session) WireVersion() uint16 { return s.wireVersion() }
 // successful AuthRequest (spec R12).
 func (s *Session) PlayerID() string { return s.playerID }
 
-// SpawnPos returns the authenticated player's spawn position, or nil
-// before a successful AuthRequest. The wiring layer registers the
-// player at this position in the simulation (design D3). In v2 the
-// position is a Vec3 whose Y is the terrain height at the spawn point.
+// SpawnPos returns the authenticated player's spawn position, or nil.
+// In the character-management flow (design D4) auth no longer resolves a
+// spawn, so this is nil after a successful AuthRequest — the spawn now
+// comes from the selected character (see CharacterSpawn). It is retained
+// for the pre-PR5 wiring path only.
 func (s *Session) SpawnPos() *mmov1.Vec3 { return s.spawnPos }
+
+// ActiveCharacterID returns the id of the session's selected character,
+// or "" before a successful SelectCharacter (design D3: the world entity
+// id is the character id, not the account id).
+func (s *Session) ActiveCharacterID() string {
+	if s.activeCharacter == nil {
+		return ""
+	}
+	return s.activeCharacter.ID
+}
+
+// CharacterSpawn returns the spawn position resolved by the last
+// successful SelectCharacter, or nil before one. The wiring layer
+// registers the player at this position when it enters the world (design
+// D4).
+func (s *Session) CharacterSpawn() *mmov1.Vec3 { return s.characterSpawn }
+
+// ActiveCharacter returns the selected character, or nil before a
+// successful SelectCharacter. Its Stats (frozen snapshot, design D2) and
+// TemplateID drive the world entity once the session enters the world.
+func (s *Session) ActiveCharacter() *character.Character { return s.activeCharacter }
 
 // HandleTCP processes one inbound TCP frame and drives the state
 // machine. On a protocol violation (undecodable frame, out-of-order
@@ -239,6 +301,12 @@ func (s *Session) dispatch(env *protocol.Envelope, msg proto.Message) error {
 		return s.handleHello(env, m)
 	case *mmov1.AuthRequest:
 		return s.handleAuth(m)
+	case *mmov1.ListCharacters:
+		return s.handleListCharacters()
+	case *mmov1.CreateCharacter:
+		return s.handleCreateCharacter(m)
+	case *mmov1.SelectCharacter:
+		return s.handleSelectCharacter(m)
 	case *mmov1.EnterWorld:
 		return s.handleEnterWorld()
 	case *mmov1.Ack:
@@ -276,9 +344,10 @@ func (s *Session) handleHello(env *protocol.Envelope, hello *mmov1.Hello) error 
 }
 
 // handleAuth authenticates the client (spec R12): handshaking +
-// AuthRequest → authenticating, then → entering on success with an ok
-// AuthResponse carrying playerId/spawnPos/udpToken (S12.1); on failure
-// a not-ok AuthResponse is sent and the session closes (S12.2).
+// AuthRequest → authenticating, then → selecting on success (design D4)
+// with an ok AuthResponse carrying playerId/udpToken but NO spawn
+// (S12.1); on failure a not-ok AuthResponse is sent and the session
+// closes (S12.2). The spawn is resolved later by SelectCharacter.
 func (s *Session) handleAuth(req *mmov1.AuthRequest) error {
 	if s.state != StateHandshaking {
 		return s.protocolError("AuthRequest received in %s", s.state)
@@ -286,21 +355,22 @@ func (s *Session) handleAuth(req *mmov1.AuthRequest) error {
 	if err := s.moveTo(StateAuthenticating); err != nil {
 		return err
 	}
-	playerID, spawn, err := s.cfg.Auth.Authenticate(req.Username, req.Password)
+	playerID, _, err := s.cfg.Auth.Authenticate(req.Username, req.Password)
 	if err != nil {
 		_ = s.sendTCP(&mmov1.AuthResponse{Ok: false, ErrorMessage: err.Error()}, false)
 		return s.closeWith(fmt.Errorf("%w: %v", ErrAuthFailed, err))
 	}
-	if err := s.moveTo(StateEntering); err != nil {
+	if err := s.moveTo(StateSelecting); err != nil {
 		return err
 	}
 	s.udpToken = s.cfg.TokenGen()
 	s.playerID = playerID
-	s.spawnPos = spawn
+	// Design D4: auth resolves only the account. The spawn position is
+	// resolved by SelectCharacter, so AuthResponse no longer carries it.
+	s.spawnPos = nil
 	return s.sendTCP(&mmov1.AuthResponse{
 		Ok:       true,
 		PlayerId: playerID,
-		SpawnPos: spawn,
 		UdpToken: s.udpToken,
 	}, false)
 }
@@ -308,6 +378,11 @@ func (s *Session) handleAuth(req *mmov1.AuthRequest) error {
 // handleEnterWorld answers the client's readiness (spec S10.1):
 // entering + EnterWorld → in-world, acknowledged with a needs-ack
 // WorldSnapshot carrying the next monotonic seq.
+//
+// Design D4: the session only reaches entering through a successful
+// SelectCharacter (which activates a character), so an EnterWorld before
+// a character is chosen is rejected here — the session is still in
+// selecting and the state check fails with ErrIllegalMessage.
 func (s *Session) handleEnterWorld() error {
 	if s.state != StateEntering {
 		return s.protocolError("EnterWorld received in %s", s.state)
@@ -318,6 +393,114 @@ func (s *Session) handleEnterWorld() error {
 	// v1 sends an empty WorldSnapshot: the session layer has no world
 	// state of its own — PR4 (world sim) fills the entity list.
 	return s.sendTCP(&mmov1.WorldSnapshot{}, true)
+}
+
+// handleListCharacters answers a ListCharacters in the selecting phase
+// (spec "List characters"): it returns every character of the
+// authenticated account. An account with no characters yields an empty
+// CharacterList (not an error). A missing repository yields an empty list
+// — the message has no error field, so empty is the graceful answer.
+func (s *Session) handleListCharacters() error {
+	if s.state != StateSelecting {
+		return s.protocolError("ListCharacters received in %s", s.state)
+	}
+	if s.cfg.Characters == nil {
+		return s.sendTCP(&mmov1.CharacterList{}, false)
+	}
+	chars, err := s.cfg.Characters.ListByAccount(s.playerID)
+	if err != nil {
+		return s.sendTCP(&mmov1.CharacterList{}, false)
+	}
+	list := &mmov1.CharacterList{Characters: make([]*mmov1.Character, 0, len(chars))}
+	for _, c := range chars {
+		list.Characters = append(list.Characters, characterToProto(c))
+	}
+	return s.sendTCP(list, false)
+}
+
+// handleCreateCharacter creates a character for the account (spec
+// "Create character"): it validates the template exists, the name is
+// lexically valid (design D7) and unique per account, then persists the
+// character with a frozen snapshot of the template's base stats (design
+// D2). On any validation failure a not-ok response is sent and no state
+// is mutated.
+func (s *Session) handleCreateCharacter(req *mmov1.CreateCharacter) error {
+	if s.state != StateSelecting {
+		return s.protocolError("CreateCharacter received in %s", s.state)
+	}
+	if s.cfg.Characters == nil || s.cfg.Templates == nil {
+		return s.sendTCP(&mmov1.CreateCharacterResponse{Ok: false, ErrorMessage: "character service not configured"}, false)
+	}
+	name, err := character.ValidateName(req.Name)
+	if err != nil {
+		return s.sendTCP(&mmov1.CreateCharacterResponse{Ok: false, ErrorMessage: err.Error()}, false)
+	}
+	tmpl, err := s.cfg.Templates.Get(req.TemplateId)
+	if err != nil {
+		return s.sendTCP(&mmov1.CreateCharacterResponse{Ok: false, ErrorMessage: "template not found"}, false)
+	}
+	// Per-account name uniqueness (design D7, case-insensitive). A name
+	// already in use must be rejected without mutating the store.
+	if _, err := s.cfg.Characters.FindByName(s.playerID, name); err == nil {
+		return s.sendTCP(&mmov1.CreateCharacterResponse{Ok: false, ErrorMessage: "name already used in account"}, false)
+	}
+	c := &character.Character{
+		AccountID:  s.playerID,
+		Name:       name,
+		TemplateID: tmpl.ID,
+		Stats:      tmpl.BaseStats, // frozen snapshot (design D2)
+	}
+	if err := s.cfg.Characters.Create(c); err != nil {
+		return s.sendTCP(&mmov1.CreateCharacterResponse{Ok: false, ErrorMessage: err.Error()}, false)
+	}
+	return s.sendTCP(&mmov1.CreateCharacterResponse{Ok: true, Character: characterToProto(c)}, false)
+}
+
+// handleSelectCharacter activates one of the account's characters (spec
+// "Select character", design D3/D4): it verifies the character exists and
+// belongs to the account, resolves spawn + stats + templateId, and moves
+// the session selecting → entering. A foreign or missing character is
+// answered with a not-ok response and the active character is unchanged.
+func (s *Session) handleSelectCharacter(req *mmov1.SelectCharacter) error {
+	if s.state != StateSelecting {
+		return s.protocolError("SelectCharacter received in %s", s.state)
+	}
+	if s.cfg.Characters == nil || s.cfg.Spawn == nil {
+		return s.sendTCP(&mmov1.SelectCharacterResponse{Ok: false, ErrorMessage: "character service not configured"}, false)
+	}
+	c, err := s.cfg.Characters.Get(req.CharacterId)
+	if err != nil {
+		return s.sendTCP(&mmov1.SelectCharacterResponse{Ok: false, ErrorMessage: "character not found"}, false)
+	}
+	if c.AccountID != s.playerID {
+		return s.sendTCP(&mmov1.SelectCharacterResponse{Ok: false, ErrorMessage: "character not owned by account"}, false)
+	}
+	spawn := s.cfg.Spawn.SpawnFor(c.ID)
+	// A valid select activates the character and advances the machine to
+	// entering (design D4); EnterWorld then moves it to in-world.
+	if err := s.moveTo(StateEntering); err != nil {
+		return err
+	}
+	s.activeCharacter = c
+	s.characterSpawn = spawn
+	return s.sendTCP(&mmov1.SelectCharacterResponse{
+		Ok:        true,
+		Character: characterToProto(c),
+		SpawnPos:  spawn,
+	}, false)
+}
+
+// characterToProto maps a domain Character to its wire message (design
+// D3/D4). Stats is the frozen snapshot; CreatedAt is ms since epoch.
+func characterToProto(c *character.Character) *mmov1.Character {
+	return &mmov1.Character{
+		Id:         c.ID,
+		AccountId:  c.AccountID,
+		Name:       c.Name,
+		TemplateId: c.TemplateID,
+		Stats:      &mmov1.Stats{Hp: c.Stats.HP, Speed: c.Stats.Speed, Atk: c.Stats.Atk, Def: c.Stats.Def},
+		CreatedAt:  c.CreatedAt.UnixMilli(),
+	}
 }
 
 // moveTo validates a state-machine transition and applies it, closing
