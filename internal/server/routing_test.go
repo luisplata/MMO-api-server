@@ -6,8 +6,6 @@ package server
 
 import (
 	"context"
-	"io"
-	"net"
 	"testing"
 	"time"
 
@@ -52,19 +50,6 @@ func joinRoom(t *testing.T, srv *Server, ctx context.Context, cid string, roomID
 	return srv.runner.room(roomID).sim
 }
 
-// discardConn is a net.Conn that drops writes, so enterWorldIn can build its
-// outbound sink without a real socket.
-type discardConn struct{}
-
-func (discardConn) Read([]byte) (int, error)         { return 0, io.EOF }
-func (discardConn) Write(p []byte) (int, error)      { return len(p), nil }
-func (discardConn) Close() error                     { return nil }
-func (discardConn) LocalAddr() net.Addr              { return fakeAddr("local") }
-func (discardConn) RemoteAddr() net.Addr             { return fakeAddr("remote") }
-func (discardConn) SetDeadline(time.Time) error      { return nil }
-func (discardConn) SetReadDeadline(time.Time) error  { return nil }
-func (discardConn) SetWriteDeadline(time.Time) error { return nil }
-
 // TestRoomIsolation pins 7.1: two independent one-player rooms never leak
 // movement, entities or spawn fanout from one into the other.
 func TestRoomIsolation(t *testing.T) {
@@ -104,22 +89,20 @@ func TestRoomIsolation(t *testing.T) {
 		srv := newTestServer(t)
 		ctx := startRoomOwner(t, srv)
 
-		clientB := mapPlayerWithConn(t, srv, "pB")
-		framesB := startFrameReader(t, clientB)
-		clientA := mapPlayerWithConn(t, srv, "pA")
-		framesA := startFrameReader(t, clientA)
+		sinkB := mapPlayer(t, srv, "pB")
+		sinkA := mapPlayer(t, srv, "pA")
 
 		joinRoom(t, srv, ctx, "pA", "room-a")
 		joinRoom(t, srv, ctx, "pA2", "room-a") // spawns for pA (same room)
 		joinRoom(t, srv, ctx, "pB", "room-b")  // first in room B: no event
 		srv.fanoutInterest()
 
-		_, msg := decodeFrame(t, srv, nextFrame(t, framesA))
+		_, msg := decodeFrame(t, srv, sinkA.nextReliable(t))
 		sp, ok := msg.(*mmov1.SpawnEntity)
 		if !ok || sp.EntityId != "pA2" {
 			t.Fatalf("room A target got %T %v, want SpawnEntity pA2", msg, msg)
 		}
-		expectNoFrame(t, framesB)
+		sinkB.expectNoFrames(t)
 	})
 
 	t.Run("unknown character input is dropped", func(t *testing.T) {
@@ -127,16 +110,21 @@ func TestRoomIsolation(t *testing.T) {
 		sess := newInWorldSession(t, srv.reg, "alice")
 		// Mapped and registered, but never bound to a room: the index has
 		// no entry, so the input must be dropped, not defaulted.
-		clientConn := mapPlayerWithConn(t, srv, testCharID)
-		_ = startFrameReader(t, clientConn)
+		mapPlayer(t, srv, testCharID)
 		if err := srv.sim.RegisterPlayer(testCharID, game.Vec2{}, "", stats.Stats{}); err != nil {
 			t.Fatalf("RegisterPlayer: %v", err)
 		}
-		addr := fakeAddr("10.0.0.1:9000")
-		srv.routeUDP(sess.UDPToken(), addr)
-		srv.routeUDP(clientFrame(t, srv.reg, &mmov1.MoveInput{
+
+		// Drive the WSS inbound path exactly as serveConn does: decode the
+		// frame, then queue it for the session's room.
+		frame := clientFrame(t, srv.reg, &mmov1.MoveInput{
 			Seq: 1, Dir: &mmov1.Vec2{X: 1, Z: 0}, Speed: 5,
-		}, 0, 0), addr)
+		}, 0, 0)
+		mi, _, ok := srv.decodeMoveInput(frame)
+		if !ok {
+			t.Fatal("decodeMoveInput rejected a valid MoveInput")
+		}
+		srv.queueMoveInput(sess, mi)
 
 		if err := srv.sim.Step(); err != nil {
 			t.Fatalf("Step: %v", err)
@@ -155,19 +143,22 @@ func TestDuplicateCharacterRejected(t *testing.T) {
 	ctx := startRoomOwner(t, srv)
 
 	sess1 := newInWorldSession(t, srv.reg, "alice")
-	if err := srv.enterWorldIn(ctx, discardConn{}, sess1, &mockTransport{}, "room-a"); err != nil {
+	sink1 := newTestSink(16)
+	t.Cleanup(func() { _ = sink1.sink.Close() })
+	if err := srv.enterWorldWithSink(ctx, nil, sess1, &mockTransport{}, sink1.sink, "room-a"); err != nil {
 		t.Fatalf("first enterWorldIn: %v", err)
 	}
 
 	sess2 := newInWorldSession(t, srv.reg, "alice")
-	conn2 := discardConn{}
-	err := srv.enterWorldIn(ctx, conn2, sess2, &mockTransport{}, "room-b")
+	sink2 := newTestSink(4)
+	t.Cleanup(func() { _ = sink2.sink.Close() })
+	err := srv.enterWorldWithSink(ctx, nil, sess2, &mockTransport{}, sink2.sink, "room-b")
 	if err == nil {
 		t.Fatal("second tab with the same character must be rejected")
 	}
 	// serveConn always tears the failed session down; that must be a no-op
 	// for the room/player owned by the first tab.
-	srv.cleanupConn(ctx, conn2, sess2)
+	srv.cleanupConn(ctx, nil, sess2)
 
 	room, ok := srv.roomOfCharacter(testCharID)
 	if !ok || room != "room-a" {
@@ -203,19 +194,16 @@ func TestScopedLeaveDespawn(t *testing.T) {
 	srv := newTestServer(t)
 	ctx := startRoomOwner(t, srv)
 
-	clientB := mapPlayerWithConn(t, srv, "pB")
-	framesB := startFrameReader(t, clientB)
-	clientA := mapPlayerWithConn(t, srv, "pA")
-	framesA := startFrameReader(t, clientA)
-	clientA2 := mapPlayerWithConn(t, srv, "pA2")
-	framesA2 := startFrameReader(t, clientA2)
+	clientB := mapPlayer(t, srv, "pB")
+	clientA := mapPlayer(t, srv, "pA")
+	clientA2 := mapPlayer(t, srv, "pA2")
 
 	joinRoom(t, srv, ctx, "pA", "room-a")
 	joinRoom(t, srv, ctx, "pA2", "room-a")
 	joinRoom(t, srv, ctx, "pB", "room-b")
 	srv.fanoutInterest()
 	// pA2's join spawns it for pA; pA2 itself is not a target yet.
-	_, msg := decodeFrame(t, srv, nextFrame(t, framesA))
+	_, msg := decodeFrame(t, srv, clientA.nextReliable(t))
 	if sp, ok := msg.(*mmov1.SpawnEntity); !ok || sp.EntityId != "pA2" {
 		t.Fatalf("initial fanout = %T, want SpawnEntity pA2", msg)
 	}
@@ -227,12 +215,12 @@ func TestScopedLeaveDespawn(t *testing.T) {
 	}
 	srv.fanoutInterest()
 
-	_, delMsg := decodeFrame(t, srv, nextFrame(t, framesA2))
+	_, delMsg := decodeFrame(t, srv, clientA2.nextReliable(t))
 	dp, ok := delMsg.(*mmov1.DespawnEntity)
 	if !ok || dp.EntityId != "pA" {
 		t.Fatalf("room A target got %T %v, want DespawnEntity pA", delMsg, delMsg)
 	}
-	expectNoFrame(t, framesB) // room B saw nothing
+	clientB.expectNoFrames(t) // room B saw nothing
 
 	if err := srv.simDo(ctx, "room-a", -1, func(sim *game.Simulation) error {
 		return sim.RemovePlayer("pA2")

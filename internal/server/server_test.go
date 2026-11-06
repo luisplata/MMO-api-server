@@ -3,14 +3,11 @@ package server
 // Shared test scaffolding for the wiring layer plus the two behavior
 // tests that need a full handshake: New validation and the enter-world
 // flow (register in the sim at the spawn position, then send the REAL
-// WorldSnapshot over TCP). Everything runs in-memory — mock transports,
-// fake PacketConn, net.Pipe — no real listeners are opened.
+// WorldSnapshot through the player's sink). Everything runs in-memory —
+// mock transports, recording sinks, no real listeners are opened.
 
 import (
 	"context"
-	"errors"
-	"net"
-	"sync"
 	"testing"
 	"time"
 
@@ -28,47 +25,9 @@ import (
 // test server supports [1,9] so it is always accepted.
 const testVersion = 7
 
-// fakeAddr is a minimal net.Addr for binding and routing tests.
-type fakeAddr string
-
-func (a fakeAddr) Network() string { return "udp" }
-func (a fakeAddr) String() string  { return string(a) }
-
-// fakePacketConn records every WriteTo datagram — SendSnapshot is
-// verified against it without opening a UDP socket.
-type fakePacketConn struct {
-	mu     sync.Mutex
-	writes []fakeWrite
-}
-
-type fakeWrite struct {
-	b    []byte
-	addr net.Addr
-}
-
-func (f *fakePacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.writes = append(f.writes, fakeWrite{b: append([]byte(nil), b...), addr: addr})
-	return len(b), nil
-}
-
-func (f *fakePacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
-	return 0, nil, errors.New("fakePacketConn: ReadFrom not implemented")
-}
-
-func (f *fakePacketConn) Close() error { return nil }
-
-func (f *fakePacketConn) LocalAddr() net.Addr { return fakeAddr("0.0.0.0:0") }
-
-func (f *fakePacketConn) SetDeadline(t time.Time) error      { return nil }
-func (f *fakePacketConn) SetReadDeadline(t time.Time) error  { return nil }
-func (f *fakePacketConn) SetWriteDeadline(t time.Time) error { return nil }
-
-var _ net.PacketConn = (*fakePacketConn)(nil)
-
 // mockTransport is a pass-through Transport seam for sessions that never
-// need to actually write (sink/UDP routing tests).
+// need to actually write (handshake replies are dropped; the frames under
+// test travel through the recording sink).
 type mockTransport struct{ closed bool }
 
 func (m *mockTransport) SendTCP([]byte) error { return nil }
@@ -88,14 +47,13 @@ func clientFrame(t *testing.T, reg *protocol.Registry, msg proto.Message, flags 
 	return frame
 }
 
-// newTestServer builds a server with a fake UDP conn and a real sim so
+// newTestServer builds a server with a real sim and room runner so
 // sink/routing behavior is exercised for real. No sockets are opened.
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	srv := &Server{
 		reg:       protocol.NewWorldRegistry(),
 		auth:      devAuthenticator{enabled: true},
-		udp:       &fakePacketConn{},
 		players:   make(map[string]*player),
 		charRooms: make(map[string]rooms.RoomID),
 	}
@@ -161,12 +119,12 @@ func addTestPlayer(t *testing.T, srv *Server, id string, sess *session.Session) 
 	return ts
 }
 
-// TestNewServerValidation pins the constructor contract: empty listen
-// addresses, a tick rate that would desync the fixed-dt sim, and an
-// invalid protocol version range are all rejected.
+// TestNewServerValidation pins the constructor contract: a missing WSS
+// listen address (the only transport), a tick rate that would desync the
+// fixed-dt sim, and an invalid protocol version range are all rejected.
 func TestNewServerValidation(t *testing.T) {
 	valid := Config{
-		TCPAddr: ":8000", UDPAddr: ":8001",
+		WSSAddr:     "127.0.0.1:0",
 		TickRate:    game.TickRate,
 		DevAuth:     true,
 		MinProtoVer: 1, MaxProtoVer: 1,
@@ -178,7 +136,7 @@ func TestNewServerValidation(t *testing.T) {
 		name string
 		mut  func(*Config)
 	}{
-		{"no listen address", func(c *Config) { c.TCPAddr = ""; c.UDPAddr = ""; c.WSSAddr = "" }},
+		{"no wss listen address", func(c *Config) { c.WSSAddr = "" }},
 		{"non-20 tick rate", func(c *Config) { c.TickRate = 10 }},
 		{"inverted version range", func(c *Config) { c.MinProtoVer = 5; c.MaxProtoVer = 1 }},
 		{"zero version range", func(c *Config) { c.MinProtoVer = 0; c.MaxProtoVer = 0 }},
@@ -197,48 +155,14 @@ func TestNewServerValidation(t *testing.T) {
 
 // TestEnterWorldRegistersAndSendsRealSnapshot covers design step 4: when
 // a session reaches in-world, the server registers the player in the sim
-// at its spawn position and sends the REAL WorldSnapshot (the session's
-// handshake WorldSnapshot is empty; the real one follows).
+// at its spawn position and sends the REAL WorldSnapshot through the
+// player's sink (the session's handshake WorldSnapshot is empty; the real
+// one follows).
 func TestEnterWorldRegistersAndSendsRealSnapshot(t *testing.T) {
 	srv := newTestServer(t)
-	serverConn, clientConn := net.Pipe()
-	defer clientConn.Close()
-	// net.Pipe is synchronous: a reader goroutine drains the client end
-	// so the session's handshake replies and the real WorldSnapshot
-	// writes never block.
-	frames := startFrameReader(t, clientConn)
-
-	sess, err := session.NewSession(srv.reg, &tcpConnTransport{conn: serverConn}, session.Config{
-		MinProtoVer: 1,
-		MaxProtoVer: 9,
-		TickRate:    game.TickRate,
-		Auth:        srv.auth,
-		Now:         time.Now,
-		Templates:   testTemplateRepo(),
-		Characters:  testCharacterRepo("alice"),
-		Spawn:       &fakeSpawnResolver{spawn: mmov1.Vec3{X: 1, Y: 0, Z: 2}},
-	})
-	if err != nil {
-		t.Fatalf("NewSession: %v", err)
-	}
-
-	// Drive the handshake (design D4: select a character before
-	// EnterWorld); each reply is drained by the reader.
-	for _, msg := range []proto.Message{
-		&mmov1.Hello{ProtoVer: testVersion},
-		&mmov1.AuthRequest{Username: "alice", Password: "pw"},
-		&mmov1.SelectCharacter{CharacterId: testCharID},
-		&mmov1.EnterWorld{},
-	} {
-		if err := sess.HandleTCP(clientFrame(t, srv.reg, msg, 0, 0)); err != nil {
-			t.Fatalf("HandleTCP(%T): %v", msg, err)
-		}
-	}
-	// Consume ServerInfo, AuthResponse, SelectCharacterResponse and the
-	// empty handshake WorldSnapshot.
-	for i := 0; i < 4; i++ {
-		nextFrame(t, frames)
-	}
+	sess := newInWorldSession(t, srv.reg, "alice")
+	sink := newTestSink(16)
+	t.Cleanup(func() { _ = sink.sink.Close() })
 
 	// The sim-owner goroutine consumes room ops so enterWorld's register
 	// op can complete. The wake channel never fires.
@@ -246,7 +170,7 @@ func TestEnterWorldRegistersAndSendsRealSnapshot(t *testing.T) {
 	defer cancel()
 	go srv.runSim(ctx, make(chan time.Time))
 
-	if err := srv.enterWorld(ctx, serverConn, sess, &tcpConnTransport{conn: serverConn}); err != nil {
+	if err := srv.enterWorldWithSink(ctx, nil, sess, &mockTransport{}, sink.sink, DefaultRoom); err != nil {
 		t.Fatalf("enterWorld: %v", err)
 	}
 
@@ -270,7 +194,7 @@ func TestEnterWorldRegistersAndSendsRealSnapshot(t *testing.T) {
 	// The client receives the REAL WorldSnapshot (non-empty, encoded
 	// with the negotiated version), keyed by the character id and
 	// carrying the templateId.
-	env, msg := decodeFrame(t, srv, nextFrame(t, frames))
+	env, msg := decodeFrame(t, srv, sink.nextReliable(t))
 	if env.Version != testVersion {
 		t.Errorf("WorldSnapshot envelope version = %d, want %d", env.Version, testVersion)
 	}

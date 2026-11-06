@@ -2,59 +2,51 @@ package server
 
 // Interest fanout tests (spec R18/S18.2, design D4): spawn/despawn events
 // drained from the simulation must be turned into SpawnEntity/
-// DespawnEntity TCP frames addressed to each target player's connection,
-// encoded with that target's negotiated wire version. Targets use
-// net.Pipe (synchronous, no listener) with a reader goroutine draining
-// the client end so writes never block the fanout.
+// DespawnEntity frames addressed to each target player's sink, encoded
+// with that target's negotiated wire version. Targets use recording sinks,
+// so no socket or listener is needed.
 
 import (
-	"net"
 	"testing"
-	"time"
 
 	"google.golang.org/protobuf/proto"
 
 	"github.com/luisplata/mmo-api-server/internal/game"
-	"github.com/luisplata/mmo-api-server/internal/network"
 	"github.com/luisplata/mmo-api-server/internal/protocol"
 	"github.com/luisplata/mmo-api-server/internal/stats"
 	"github.com/luisplata/mmo-api-server/internal/world"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
-// addTargetPlayer registers a player in the server map AND the
-// simulation (the enterWorld state) with a net.Pipe conn, returning the
-// client end for reading frames.
-func addTargetPlayer(t *testing.T, srv *Server, id string) net.Conn {
+// mapPlayer registers a player in the server map only (no sim entry) with
+// a recording outbound Sink (design P3) and returns it.
+func mapPlayer(t *testing.T, srv *Server, id string) *testSink {
 	t.Helper()
-	clientConn := mapPlayerWithConn(t, srv, id)
+	sess := newInWorldSession(t, srv.reg, id)
+	sink := newTestSink(16)
+	t.Cleanup(func() { _ = sink.sink.Close() })
+	srv.mu.Lock()
+	srv.players[id] = &player{sess: sess, sink: sink.sink}
+	srv.mu.Unlock()
+	return sink
+}
+
+// addTargetPlayer registers a player in the server map AND the
+// simulation (the enterWorld state) with a recording sink, returning that
+// sink for reading frames.
+func addTargetPlayer(t *testing.T, srv *Server, id string) *testSink {
+	t.Helper()
+	sink := mapPlayer(t, srv, id)
 	if err := srv.sim.RegisterPlayer(id, game.Vec2{}, "", stats.Stats{}); err != nil {
 		t.Fatalf("RegisterPlayer(%s): %v", id, err)
 	}
-	return clientConn
-}
-
-// mapPlayerWithConn registers a player in the server map only (no sim
-// entry) with a net.Pipe conn and a production-faithful outbound Sink
-// (design P3) whose reliable writer delivers over the server end.
-func mapPlayerWithConn(t *testing.T, srv *Server, id string) net.Conn {
-	t.Helper()
-	serverConn, clientConn := net.Pipe()
-	t.Cleanup(func() { _ = clientConn.Close() })
-	sess := newInWorldSession(t, srv.reg, id)
-	sink := srv.newConnSink(serverConn, sess)
-	t.Cleanup(func() { _ = sink.Close() })
-	srv.mu.Lock()
-	srv.players[id] = &player{sess: sess, tr: &mockTransport{}, tcp: serverConn, sink: sink}
-	srv.mu.Unlock()
-	return clientConn
+	return sink
 }
 
 func TestFanoutInterest(t *testing.T) {
 	t.Run("spawn event sends SpawnEntity to the target", func(t *testing.T) {
 		srv := newTestServer(t)
-		clientConn := addTargetPlayer(t, srv, "p1")
-		frames := startFrameReader(t, clientConn)
+		sink := addTargetPlayer(t, srv, "p1")
 
 		// Register p2 in the sim; the target p1 sees it → SpawnEvent.
 		if err := srv.sim.RegisterPlayer("p2", game.Vec2{X: 10, Z: 20}, "", stats.Stats{}); err != nil {
@@ -62,7 +54,7 @@ func TestFanoutInterest(t *testing.T) {
 		}
 		srv.fanoutInterest()
 
-		env, msg := decodeFrame(t, srv, nextFrame(t, frames))
+		env, msg := decodeFrame(t, srv, sink.nextReliable(t))
 		if env.Version != testVersion {
 			t.Errorf("envelope version = %d, want target's negotiated %d", env.Version, testVersion)
 		}
@@ -80,21 +72,20 @@ func TestFanoutInterest(t *testing.T) {
 
 	t.Run("despawn event sends DespawnEntity to the target", func(t *testing.T) {
 		srv := newTestServer(t)
-		clientConn := addTargetPlayer(t, srv, "p1")
-		frames := startFrameReader(t, clientConn)
+		sink := addTargetPlayer(t, srv, "p1")
 
 		if err := srv.sim.RegisterPlayer("p2", game.Vec2{X: 10, Z: 20}, "", stats.Stats{}); err != nil {
 			t.Fatalf("RegisterPlayer: %v", err)
 		}
 		srv.fanoutInterest()
-		nextFrame(t, frames) // consume the spawn frame
+		sink.nextReliable(t) // consume the spawn frame
 
 		if err := srv.sim.RemovePlayer("p2"); err != nil {
 			t.Fatalf("RemovePlayer: %v", err)
 		}
 		srv.fanoutInterest()
 
-		_, msg := decodeFrame(t, srv, nextFrame(t, frames))
+		_, msg := decodeFrame(t, srv, sink.nextReliable(t))
 		dp, ok := msg.(*mmov1.DespawnEntity)
 		if !ok {
 			t.Fatalf("frame carries %T, want *mmov1.DespawnEntity", msg)
@@ -106,10 +97,9 @@ func TestFanoutInterest(t *testing.T) {
 
 	t.Run("unknown target skipped without writing", func(t *testing.T) {
 		srv := newTestServer(t)
-		// p1 is mapped (with a conn) but NOT a sim player, so p2's
-		// spawn event targets only the unmapped sim player pGhost.
-		clientConn := mapPlayerWithConn(t, srv, "p1")
-		frames := startFrameReader(t, clientConn)
+		// p1 is mapped but NOT a sim player, so p2's spawn event targets
+		// only the unmapped sim player pGhost.
+		sink := mapPlayer(t, srv, "p1")
 
 		srv.sim.RegisterPlayer("pGhost", game.Vec2{X: 1, Z: 2}, "", stats.Stats{}) // first → no event
 		srv.sim.RegisterPlayer("p2", game.Vec2{X: 1, Z: 2}, "", stats.Stats{})     // SpawnEvent{p2 -> [pGhost]}
@@ -120,13 +110,12 @@ func TestFanoutInterest(t *testing.T) {
 			t.Errorf("fanout must drain events, %d left", len(events))
 		}
 		// ...and nothing was written to the mapped player.
-		expectNoFrame(t, frames)
+		sink.expectNoFrames(t)
 	})
 
 	t.Run("spawn of unknown subject skipped", func(t *testing.T) {
 		srv := newTestServer(t)
-		clientConn := addTargetPlayer(t, srv, "p1")
-		frames := startFrameReader(t, clientConn)
+		sink := addTargetPlayer(t, srv, "p1")
 
 		// A SpawnEvent for a subject with no entity (e.g. a despawned
 		// player) must not dereference nil state.
@@ -136,7 +125,7 @@ func TestFanoutInterest(t *testing.T) {
 			Targets: []string{"p1"},
 		}, "p1")
 
-		expectNoFrame(t, frames)
+		sink.expectNoFrames(t)
 	})
 }
 
@@ -152,48 +141,4 @@ func decodeFrame(t *testing.T, srv *Server, frame []byte) (*protocol.Envelope, p
 		t.Fatalf("registry decode: %v", err)
 	}
 	return env, msg
-}
-
-// nextFrame waits for the next frame from the reader goroutine.
-func nextFrame(t *testing.T, frames <-chan []byte) []byte {
-	t.Helper()
-	select {
-	case frame, ok := <-frames:
-		if !ok {
-			t.Fatalf("frame reader closed before delivering")
-		}
-		return frame
-	case <-time.After(2 * time.Second):
-		t.Fatalf("timed out waiting for a frame")
-		return nil
-	}
-}
-
-// expectNoFrame asserts that no frame arrives within a short window.
-func expectNoFrame(t *testing.T, frames <-chan []byte) {
-	t.Helper()
-	select {
-	case frame := <-frames:
-		t.Fatalf("unexpected frame written: %v", frame)
-	case <-time.After(100 * time.Millisecond):
-	}
-}
-
-// startFrameReader drains frames from the client end of a net.Pipe so
-// writes to the server end never block (net.Pipe is synchronous). The
-// channel closes when the conn closes.
-func startFrameReader(t *testing.T, conn net.Conn) <-chan []byte {
-	t.Helper()
-	ch := make(chan []byte, 8)
-	go func() {
-		for {
-			frame, err := network.ReadFrame(conn)
-			if err != nil {
-				close(ch)
-				return
-			}
-			ch <- frame
-		}
-	}()
-	return ch
 }

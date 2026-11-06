@@ -1,15 +1,14 @@
 package server
 
 // P1 inbound seam test: the per-connection read loop consumes a
-// FrameSource instead of reading net.Conn directly. A fake source
-// replays the handshake→world frame sequence, the session reaches
-// in-world (the real WorldSnapshot is written), and a clean close on EOF
-// tears the player back down.
+// FrameSource instead of reading net.Conn directly. A fake source replays
+// the handshake→world frame sequence, the session reaches in-world (the
+// real WorldSnapshot is written through the sink), and a clean close on
+// EOF tears the player back down.
 
 import (
 	"context"
 	"io"
-	"net"
 	"testing"
 	"time"
 
@@ -45,10 +44,10 @@ var _ network.FrameSource = (*replaySource)(nil)
 
 // TestServeConnConsumesFrameSource replays Hello→Auth→Select→EnterWorld
 // through a FrameSource, asserts the session reaches in-world and the
-// real WorldSnapshot reaches the client, then that EOF cleans up.
+// real WorldSnapshot reaches the sink, then that EOF cleans up.
 func TestServeConnConsumesFrameSource(t *testing.T) {
 	srv, err := New(Config{
-		TCPAddr: ":8000", UDPAddr: ":8001",
+		WSSAddr:     "127.0.0.1:0",
 		TickRate:    game.TickRate,
 		DevAuth:     true,
 		MinProtoVer: 1, MaxProtoVer: 9,
@@ -59,10 +58,6 @@ func TestServeConnConsumesFrameSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-
-	serverConn, clientConn := net.Pipe()
-	defer clientConn.Close()
-	frames := startFrameReader(t, clientConn)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -75,21 +70,19 @@ func TestServeConnConsumesFrameSource(t *testing.T) {
 		clientFrame(t, srv.reg, &mmov1.SelectCharacter{CharacterId: testCharID}, 0, 0),
 		clientFrame(t, srv.reg, &mmov1.EnterWorld{}, 0, 0),
 	}}
+	sink := newTestSink(8)
+	t.Cleanup(func() { _ = sink.sink.Close() })
 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		srv.serveConn(ctx, src, serverConn)
+		srv.serveFrames(ctx, src, nil, &mockTransport{}, sink.sink, false)
 	}()
 
-	// ServerInfo, AuthResponse, SelectCharacterResponse, empty handshake
-	// WorldSnapshot, then the REAL WorldSnapshot (non-empty). The real one
-	// is delivered asynchronously by the player's sink (design P3), so the
-	// source blocks here — keeping the conn alive — until it is observed.
-	for i := 0; i < 4; i++ {
-		nextFrame(t, frames)
-	}
-	env, msg := decodeFrame(t, srv, nextFrame(t, frames))
+	// The REAL WorldSnapshot (non-empty) is delivered asynchronously by
+	// the player's sink (design P3) after the empty handshake snapshot the
+	// mock transport drops.
+	env, msg := decodeFrame(t, srv, sink.nextReliable(t))
 	if env.Version != testVersion {
 		t.Errorf("WorldSnapshot envelope version = %d, want %d", env.Version, testVersion)
 	}

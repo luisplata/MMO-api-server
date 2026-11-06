@@ -52,7 +52,7 @@ func TestWSOriginAllowlist(t *testing.T) {
 
 func TestWSSBootRejectsWildcardOrigin(t *testing.T) {
 	base := Config{
-		TCPAddr: ":0", UDPAddr: ":0", WSSAddr: "127.0.0.1:0",
+		WSSAddr:  "127.0.0.1:0",
 		TickRate: game.TickRate, DevAuth: true, MinProtoVer: 1, MaxProtoVer: 1,
 	}
 	for _, origin := range []string{"*", "https://*.example.com"} {

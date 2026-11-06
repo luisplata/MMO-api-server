@@ -15,6 +15,13 @@ import (
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
+// fakeAddr is a minimal net.Addr for the legacy UDP routing assertions.
+// It lives here because P13 keeps the UDP runtime compiling until P13e.
+type fakeAddr string
+
+func (a fakeAddr) Network() string { return "udp" }
+func (a fakeAddr) String() string  { return string(a) }
+
 func TestRouteUDP(t *testing.T) {
 	t.Run("token datagram binds and queues no input", func(t *testing.T) {
 		srv := newTestServer(t)
