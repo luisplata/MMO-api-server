@@ -192,14 +192,28 @@ func (w *wsClient) createCharacter(t *testing.T, templateID, name string) *mmov1
 	return requireWS[*mmov1.CreateCharacterResponse](t, w, "CreateCharacterResponse")
 }
 
-func (w *wsClient) selectCharacter(t *testing.T, charID string) *mmov1.SelectCharacterResponse {
-	// P15: a room is required alongside the character before EnterWorld.
-	w.send(t, &mmov1.JoinRoom{Mode: protocol.JoinRoomNextAvailable})
-	if jr := requireWS[*mmov1.JoinRoomResponse](t, w, "JoinRoomResponse"); jr.GetRoomId() == "" {
-		t.Fatalf("%s: JoinRoom rejected: %+v", w.name, jr)
-	}
+// joinRoom sends one JoinRoom and returns the server's response. A zero
+// response is the lobby's rejection signal (P15).
+func (w *wsClient) joinRoom(t *testing.T, mode int32, roomID string) *mmov1.JoinRoomResponse {
+	t.Helper()
+	w.send(t, &mmov1.JoinRoom{Mode: mode, RoomId: roomID})
+	return requireWS[*mmov1.JoinRoomResponse](t, w, "JoinRoomResponse")
+}
+
+// selectCharacterOnly selects a character after the room is already resolved,
+// leaving the session entering.
+func (w *wsClient) selectCharacterOnly(t *testing.T, charID string) *mmov1.SelectCharacterResponse {
+	t.Helper()
 	w.send(t, &mmov1.SelectCharacter{CharacterId: charID})
 	return requireWS[*mmov1.SelectCharacterResponse](t, w, "SelectCharacterResponse")
+}
+
+func (w *wsClient) selectCharacter(t *testing.T, charID string) *mmov1.SelectCharacterResponse {
+	// P15: a room is required alongside the character before EnterWorld.
+	if jr := w.joinRoom(t, protocol.JoinRoomNextAvailable, ""); jr.GetRoomId() == "" {
+		t.Fatalf("%s: JoinRoom rejected: %+v", w.name, jr)
+	}
+	return w.selectCharacterOnly(t, charID)
 }
 
 // enterWorldNow sends EnterWorld and returns the REAL WorldSnapshot (the
@@ -223,6 +237,15 @@ func (w *wsClient) enterWorldNow(t *testing.T, charID string) *mmov1.WorldSnapsh
 // returns the resolved spawn, the character id, and the real snapshot.
 func (w *wsClient) enterWorld(t *testing.T, username, templateID, name string) (*mmov1.Vec3, string, *mmov1.WorldSnapshot) {
 	t.Helper()
+	spawn, id, _, snap := w.enterWorldIn(t, username, templateID, name, protocol.JoinRoomNextAvailable, "")
+	return spawn, id, snap
+}
+
+// enterWorldIn is enterWorld with an explicit lobby mode/room: auth → create
+// → JoinRoom(mode, roomID) → select → EnterWorld. It also returns the
+// JoinRoomResponse so tests can assert capacity/occupancy or a rejection.
+func (w *wsClient) enterWorldIn(t *testing.T, username, templateID, name string, mode int32, roomID string) (*mmov1.Vec3, string, *mmov1.JoinRoomResponse, *mmov1.WorldSnapshot) {
+	t.Helper()
 	w.connectAndAuth(t, username)
 	if cl := w.listCharacters(t); len(cl.Characters) != 0 {
 		t.Fatalf("%s: fresh account CharacterList = %d chars, want 0", w.name, len(cl.Characters))
@@ -231,12 +254,19 @@ func (w *wsClient) enterWorld(t *testing.T, username, templateID, name string) (
 	if !cc.GetOk() || cc.GetCharacter().GetId() == "" {
 		t.Fatalf("%s: CreateCharacter = %v, want a character", w.name, cc)
 	}
-	sc := w.selectCharacter(t, cc.Character.Id)
+	jr := w.joinRoom(t, mode, roomID)
+	if mode == protocol.JoinRoomByID && jr.GetRoomId() != roomID {
+		t.Fatalf("%s: JoinRoom by id %q = %+v, want that room", w.name, roomID, jr)
+	}
+	if jr.GetRoomId() == "" {
+		t.Fatalf("%s: JoinRoom rejected: %+v", w.name, jr)
+	}
+	sc := w.selectCharacterOnly(t, cc.Character.Id)
 	if !sc.GetOk() || sc.SpawnPos == nil {
 		t.Fatalf("%s: SelectCharacter = %v, want a spawn", w.name, sc)
 	}
 	if sc.SpawnPos.Y != 25 {
 		t.Errorf("%s: SpawnPos.Y = %v, want 25 (hill peak at spawn)", w.name, sc.SpawnPos.Y)
 	}
-	return sc.SpawnPos, cc.Character.Id, w.enterWorldNow(t, cc.Character.Id)
+	return sc.SpawnPos, cc.Character.Id, jr, w.enterWorldNow(t, cc.Character.Id)
 }
