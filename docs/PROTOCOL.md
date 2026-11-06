@@ -138,7 +138,7 @@ Reglas del ciclo de vida:
 
 ---
 
-## 5. Catálogo de mensajes (ids 1–18)
+## 5. Catálogo de mensajes (ids 1–20)
 
 Tipos embebidos (no son mensajes de envelope): `Vec2{ x, z }` (plano de tierra: velocidad y `MoveInput.dir`), `Vec3{ x, y, z }` (**posición y spawn** — la `y` es la **altura derivada del terreno**, calculada por el server a partir del mapa de alturas, **nunca enviada por el cliente**; la cámara sigue siendo client-local, no se networkea), `EntityState{ id, pos, velocity, yaw, templateId }` (**yaw en radianes**; `templateId` es la **plantilla del personaje** — aditivo, campo 5 — para que el cliente elija el modelo visual, vacío en entidades no-personaje; **no existen** pitch/roll, es estructuralmente imposible), `Stats{ hp, speed, atk, def }` (los valores numéricos de la hoja del personaje) y `Character{ id, accountId, name, templateId, stats, createdAt }` (un personaje de la cuenta; `id` es la **entidad del mundo** cuando se selecciona).
 
@@ -162,6 +162,8 @@ Tipos embebidos (no son mensajes de envelope): `Vec2{ x, z }` (plano de tierra: 
 | 16 | `CreateCharacterResponse` | S → C | TCP | `ok`, `character (Character)`, `errorMessage` | `ok=true` → `character` (id + `templateId` + stats congeladas de la plantilla). `ok=false` → `errorMessage` (plantilla inexistente, nombre inválido/duplicado); **no muta** estado. |
 | 17 | `SelectCharacter` | C → S | TCP | `characterId` | Activa un personaje de la cuenta como entidad del mundo. Solo válido en `selecting`; verifica que exista y pertenezca a la cuenta. |
 | 18 | `SelectCharacterResponse` | S → C | TCP | `ok`, `character (Character)`, `spawnPos (Vec3)`, `errorMessage` | `ok=true` → `spawnPos` (altura del terreno resuelta) + `character` (`stats` + `templateId`) y la sesión pasa a `entering`. `ok=false` → `errorMessage` (personaje ajeno/inexistente); el activo no cambia. |
+| 19 | `Ping` | C → S | WSS | `nonce (uint64)`, `clientTime (int64, ms epoch)` | Probe de latencia. El server lo responde fuera del tick; máximo 5/s por sesión (el exceso se descarta). |
+| 20 | `Pong` | S → C | WSS | `nonce`, `clientTime` | Echo inmediato del `Ping`. Calculá RTT con `clientTime`; ver §7. |
 
 ---
 
@@ -190,6 +192,13 @@ Tipos embebidos (no son mensajes de envelope): `Vec2{ x, z }` (plano de tierra: 
   - `MoveInput.seq` — del cliente, tag de cada input (el server lo asocia al tick).
 - **Interés (v2 flat)**: cada jugador ve a **todos** los demás. Al entrar, tu `WorldSnapshot` real ya lleva a todos; los que ya estaban reciben `SpawnEntity` tuyo; al salir, los demás reciben `DespawnEntity`. (El grid de chunks de 64 u / 5×5 es futuro — el contrato ya lo soporta sin cambios de mensajes.)
 - **Cámara**: es client-local. Nunca se networkea (no hay pitch/roll en el contrato); el cliente posiciona su cámara por su cuenta sobre el estado autoritativo XZ+Y.
+
+### Latencia de aplicación: Ping/Pong (ids 19–20)
+
+- **Dirección y campos**: `Ping` C→S y `Pong` S→C por **WSS**; `nonce (uint64)` y `clientTime (int64, ms epoch)`. El server hace **echo idéntico** de ambos. Aditivos: no cambian envelope ni versionado.
+- **Fuera del tick**: se responde en el read loop de la conexión. Nunca encola `MoveInput`, nunca muta la simulación y no altera la cadencia de 20 Hz ni los snapshots. Máximo **5 pings/s por sesión**; el excedente se descarta en silencio (sin error ni cierre).
+- **RTT / EMA / jitter (cliente)**: `rtt = now - clientTime`; suavizá con `ema = α·rtt + (1-α)·ema` (α≈0.2) y calculá `jitter = EMA(|rtt - ema|)`. Usá el `nonce` para descartar ecos fuera de orden.
+- **Stale**: tras **~10 s sin `Pong` ni `Snapshot`**, marcá el enlace como stale; los pings siguen limitados a 5/s. Ni `Ping` ni `Pong` llevan `needs-ack`.
 
 ---
 

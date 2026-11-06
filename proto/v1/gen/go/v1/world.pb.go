@@ -34,10 +34,13 @@
 //	16  CreateCharacterResponse
 //	17  SelectCharacter
 //	18  SelectCharacterResponse
+//	19  Ping
+//	20  Pong
 //
 // New message types take new additive ids. Ids 13-18 enable the
 // character-management flow (list/create/select) on top of an existing
-// session; they are additive and never reuse a prior field or id.
+// session; ids 19-20 add the application-level latency probe. All are
+// additive and never reuse a prior field or id.
 //
 // Entity shape (design D3, v2): position is Vec3 (x, y, z) where y is
 // the server-derived terrain height — never client-supplied. Velocity
@@ -1407,6 +1410,116 @@ func (x *SelectCharacterResponse) GetErrorMessage() string {
 	return ""
 }
 
+// ─── Latency probe (additive, type ids 19-20) ───────────────────────
+//
+// Ping echoes nonce + clientTime (ms since epoch) so the client computes
+// RTT = now - clientTime. Off-tick, no world mutation, max 5/s; excess is
+// dropped silently without closing.
+type Ping struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Nonce         uint64                 `protobuf:"varint,1,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	ClientTime    int64                  `protobuf:"varint,2,opt,name=clientTime,proto3" json:"clientTime,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Ping) Reset() {
+	*x = Ping{}
+	mi := &file_v1_world_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Ping) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Ping) ProtoMessage() {}
+
+func (x *Ping) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_world_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Ping.ProtoReflect.Descriptor instead.
+func (*Ping) Descriptor() ([]byte, []int) {
+	return file_v1_world_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *Ping) GetNonce() uint64 {
+	if x != nil {
+		return x.Nonce
+	}
+	return 0
+}
+
+func (x *Ping) GetClientTime() int64 {
+	if x != nil {
+		return x.ClientTime
+	}
+	return 0
+}
+
+// Pong echoes the Ping fields immediately, outside the 20 Hz tick.
+type Pong struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Nonce         uint64                 `protobuf:"varint,1,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	ClientTime    int64                  `protobuf:"varint,2,opt,name=clientTime,proto3" json:"clientTime,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Pong) Reset() {
+	*x = Pong{}
+	mi := &file_v1_world_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Pong) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Pong) ProtoMessage() {}
+
+func (x *Pong) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_world_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Pong.ProtoReflect.Descriptor instead.
+func (*Pong) Descriptor() ([]byte, []int) {
+	return file_v1_world_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *Pong) GetNonce() uint64 {
+	if x != nil {
+		return x.Nonce
+	}
+	return 0
+}
+
+func (x *Pong) GetClientTime() int64 {
+	if x != nil {
+		return x.ClientTime
+	}
+	return 0
+}
+
 var File_v1_world_proto protoreflect.FileDescriptor
 
 const file_v1_world_proto_rawDesc = "" +
@@ -1501,7 +1614,17 @@ const file_v1_world_proto_rawDesc = "" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12/\n" +
 	"\tcharacter\x18\x02 \x01(\v2\x11.mmo.v1.CharacterR\tcharacter\x12(\n" +
 	"\bspawnPos\x18\x03 \x01(\v2\f.mmo.v1.Vec3R\bspawnPos\x12\"\n" +
-	"\ferrorMessage\x18\x04 \x01(\tR\ferrorMessageBGZ<github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1;mmov1\xaa\x02\x06Mmo.V1b\x06proto3"
+	"\ferrorMessage\x18\x04 \x01(\tR\ferrorMessage\"<\n" +
+	"\x04Ping\x12\x14\n" +
+	"\x05nonce\x18\x01 \x01(\x04R\x05nonce\x12\x1e\n" +
+	"\n" +
+	"clientTime\x18\x02 \x01(\x03R\n" +
+	"clientTime\"<\n" +
+	"\x04Pong\x12\x14\n" +
+	"\x05nonce\x18\x01 \x01(\x04R\x05nonce\x12\x1e\n" +
+	"\n" +
+	"clientTime\x18\x02 \x01(\x03R\n" +
+	"clientTimeBGZ<github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1;mmov1\xaa\x02\x06Mmo.V1b\x06proto3"
 
 var (
 	file_v1_world_proto_rawDescOnce sync.Once
@@ -1515,7 +1638,7 @@ func file_v1_world_proto_rawDescGZIP() []byte {
 	return file_v1_world_proto_rawDescData
 }
 
-var file_v1_world_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_v1_world_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_v1_world_proto_goTypes = []any{
 	(*Vec2)(nil),                    // 0: mmo.v1.Vec2
 	(*Vec3)(nil),                    // 1: mmo.v1.Vec3
@@ -1540,6 +1663,8 @@ var file_v1_world_proto_goTypes = []any{
 	(*CreateCharacterResponse)(nil), // 20: mmo.v1.CreateCharacterResponse
 	(*SelectCharacter)(nil),         // 21: mmo.v1.SelectCharacter
 	(*SelectCharacterResponse)(nil), // 22: mmo.v1.SelectCharacterResponse
+	(*Ping)(nil),                    // 23: mmo.v1.Ping
+	(*Pong)(nil),                    // 24: mmo.v1.Pong
 }
 var file_v1_world_proto_depIdxs = []int32{
 	1,  // 0: mmo.v1.EntityState.pos:type_name -> mmo.v1.Vec3
@@ -1572,7 +1697,7 @@ func file_v1_world_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_v1_world_proto_rawDesc), len(file_v1_world_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   23,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

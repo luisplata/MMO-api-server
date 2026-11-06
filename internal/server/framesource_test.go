@@ -23,13 +23,17 @@ import (
 // alive (letting the async sink writer deliver its frames) and release
 // the teardown deterministically.
 type replaySource struct {
-	frames [][]byte
-	i      int
-	hold   chan struct{}
+	frames  [][]byte
+	i       int
+	hold    chan struct{}
+	drained chan struct{}
 }
 
 func (r *replaySource) Next() ([]byte, error) {
 	if r.i >= len(r.frames) {
+		if r.drained != nil {
+			close(r.drained)
+		}
 		if r.hold != nil {
 			<-r.hold
 		}

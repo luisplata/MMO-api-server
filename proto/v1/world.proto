@@ -34,10 +34,13 @@
 //	16  CreateCharacterResponse
 //	17  SelectCharacter
 //	18  SelectCharacterResponse
+//	19  Ping
+//	20  Pong
 //
 // New message types take new additive ids. Ids 13-18 enable the
 // character-management flow (list/create/select) on top of an existing
-// session; they are additive and never reuse a prior field or id.
+// session; ids 19-20 add the application-level latency probe. All are
+// additive and never reuse a prior field or id.
 //
 // Entity shape (design D3, v2): position is Vec3 (x, y, z) where y is
 // the server-derived terrain height — never client-supplied. Velocity
@@ -251,4 +254,20 @@ message SelectCharacterResponse {
   Character character = 2;
   Vec3 spawnPos = 3;
   string errorMessage = 4;
+}
+
+// ─── Latency probe (additive, type ids 19-20) ───────────────────────
+//
+// Ping echoes nonce + clientTime (ms since epoch) so the client computes
+// RTT = now - clientTime. Off-tick, no world mutation, max 5/s; excess is
+// dropped silently without closing.
+message Ping {
+  uint64 nonce = 1;
+  int64 clientTime = 2;
+}
+
+// Pong echoes the Ping fields immediately, outside the 20 Hz tick.
+message Pong {
+  uint64 nonce = 1;
+  int64 clientTime = 2;
 }

@@ -163,6 +163,13 @@ type Session struct {
 	// handshakeDeadline is now()+HandshakeTimeout at construction (or
 	// zero when timeouts are disabled).
 	handshakeDeadline time.Time
+
+	// pingWindow/pingCount enforce the per-session latency-probe budget
+	// (spec latency-probe): at most pingsPerSecond Pongs per second;
+	// excess Pings are dropped silently so a flood can never close the
+	// session or touch the simulation tick.
+	pingWindow time.Time
+	pingCount  int
 }
 
 // NewSession constructs a session in the connecting state. A nil
@@ -314,6 +321,10 @@ func (s *Session) dispatch(env *protocol.Envelope, msg proto.Message) error {
 		// nothing to resend, so we simply accept it in any state. It can
 		// never be an out-of-order violation.
 		return nil
+	case *mmov1.Ping:
+		// The latency probe is off-tick bookkeeping: it echoes the
+		// client's nonce/timestamp without advancing the lifecycle.
+		return s.handlePing(m)
 	default:
 		return s.protocolError("message %s is not part of the lifecycle", msg.ProtoReflect().Descriptor().Name())
 	}

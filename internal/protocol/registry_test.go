@@ -121,6 +121,8 @@ func TestRegistryMessageRoundTripDispatch(t *testing.T) {
 		{"CreateCharacterResponse", 16, &mmov1.CreateCharacterResponse{Ok: true, Character: &mmov1.Character{Id: "c1", AccountId: "alice", Name: "hero", TemplateId: "t1", Stats: &mmov1.Stats{Hp: 10, Speed: 5, Atk: 3, Def: 2}, CreatedAt: 1782912345678}, ErrorMessage: ""}},
 		{"SelectCharacter", 17, &mmov1.SelectCharacter{CharacterId: "c1"}},
 		{"SelectCharacterResponse", 18, &mmov1.SelectCharacterResponse{Ok: true, Character: &mmov1.Character{Id: "c1", AccountId: "alice", Name: "hero", TemplateId: "t1", Stats: &mmov1.Stats{Hp: 10, Speed: 5, Atk: 3, Def: 2}, CreatedAt: 1782912345678}, SpawnPos: &mmov1.Vec3{X: 5, Y: 0, Z: 5}, ErrorMessage: ""}},
+		{"Ping", 19, &mmov1.Ping{Nonce: 42, ClientTime: 1782912345678}},
+		{"Pong", 20, &mmov1.Pong{Nonce: 42, ClientTime: 1782912345678}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

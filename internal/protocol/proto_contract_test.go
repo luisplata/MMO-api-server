@@ -370,6 +370,26 @@ func TestMessageRoundTrip(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "Ping",
+			msg:  &mmov1.Ping{Nonce: 42, ClientTime: 1_782_912_345_678},
+			verify: func(t *testing.T, got proto.Message) {
+				p := got.(*mmov1.Ping)
+				if p.Nonce != 42 || p.ClientTime != 1_782_912_345_678 {
+					t.Errorf("Ping round-trip mismatch: %+v", p)
+				}
+			},
+		},
+		{
+			name: "Pong",
+			msg:  &mmov1.Pong{Nonce: 7, ClientTime: 1_782_912_345_678},
+			verify: func(t *testing.T, got proto.Message) {
+				p := got.(*mmov1.Pong)
+				if p.Nonce != 7 || p.ClientTime != 1_782_912_345_678 {
+					t.Errorf("Pong round-trip mismatch: %+v", p)
+				}
+			},
+		},
 	}
 
 	for _, tc := range cases {
