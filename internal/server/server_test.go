@@ -82,6 +82,7 @@ func newInWorldSession(t *testing.T, reg *protocol.Registry, username string) *s
 		Templates:   testTemplateRepo(),
 		Characters:  testCharacterRepo(username),
 		Spawn:       &fakeSpawnResolver{spawn: mmov1.Vec3{X: 1, Y: 0, Z: 2}},
+		Rooms:       rooms.NewManager(),
 	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -89,6 +90,7 @@ func newInWorldSession(t *testing.T, reg *protocol.Registry, username string) *s
 	steps := []proto.Message{
 		&mmov1.Hello{ProtoVer: testVersion},
 		&mmov1.AuthRequest{Username: username, Password: "pw"},
+		&mmov1.JoinRoom{Mode: protocol.JoinRoomNextAvailable},
 		&mmov1.SelectCharacter{CharacterId: testCharID},
 		&mmov1.EnterWorld{},
 	}

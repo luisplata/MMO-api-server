@@ -24,6 +24,7 @@ import (
 
 	"github.com/luisplata/mmo-api-server/internal/character"
 	"github.com/luisplata/mmo-api-server/internal/protocol"
+	"github.com/luisplata/mmo-api-server/internal/rooms"
 	"github.com/luisplata/mmo-api-server/internal/stats"
 	"github.com/luisplata/mmo-api-server/internal/template"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
@@ -130,9 +131,17 @@ func selectingSession(t *testing.T, mut func(*Config)) (*Session, *mockTransport
 	return s, tr, reg
 }
 
-// sendSelect drives a SelectCharacter for charID and expects no error.
+// sendSelect reserves the default room directly (P15 requires one before
+// EnterWorld; the JoinRoom wire path has its own tests) then selects.
 func sendSelect(t *testing.T, s *Session, reg *protocol.Registry, charID string) {
 	t.Helper()
+	if s.ActiveRoomID() == "" {
+		res, err := s.cfg.Rooms.Reserve(rooms.DefaultRoom)
+		if err != nil {
+			t.Fatalf("Reserve default: %v", err)
+		}
+		s.roomRes, s.roomID = res, rooms.DefaultRoom
+	}
 	if err := s.HandleTCP(clientFrame(t, reg, &mmov1.SelectCharacter{CharacterId: charID}, 0, 0)); err != nil {
 		t.Fatalf("SelectCharacter(%s): %v", charID, err)
 	}

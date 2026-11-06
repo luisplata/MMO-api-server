@@ -185,6 +185,10 @@ func enterWorldProxy(t *testing.T, ctx context.Context, c *websocket.Conn, reg *
 		t.Fatalf("create = %v", created)
 	}
 	id := created.GetCharacter().GetId()
+	joined, ok := proxyRound(t, ctx, c, reg, &mmov1.JoinRoom{Mode: protocol.JoinRoomNextAvailable}).(*mmov1.JoinRoomResponse)
+	if !ok || joined.GetRoomId() == "" {
+		t.Fatalf("join room = %v", joined)
+	}
 	selected, ok := proxyRound(t, ctx, c, reg, &mmov1.SelectCharacter{CharacterId: id}).(*mmov1.SelectCharacterResponse)
 	if !ok || !selected.GetOk() {
 		t.Fatalf("select = %v", selected)

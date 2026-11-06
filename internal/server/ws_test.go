@@ -109,6 +109,10 @@ func enterWS(t *testing.T, ctx context.Context, srv *Server, c *websocket.Conn, 
 	if !ok || !created.GetOk() {
 		t.Fatalf("create = %v", created)
 	}
+	joined, ok := wsRound(t, ctx, c, srv, &mmov1.JoinRoom{Mode: protocol.JoinRoomNextAvailable}).(*mmov1.JoinRoomResponse)
+	if !ok || joined.GetRoomId() == "" {
+		t.Fatalf("join room = %v", joined)
+	}
 	id := created.GetCharacter().GetId()
 	selected, ok := wsRound(t, ctx, c, srv, &mmov1.SelectCharacter{CharacterId: id}).(*mmov1.SelectCharacterResponse)
 	if !ok || !selected.GetOk() {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/luisplata/mmo-api-server/internal/game"
 	"github.com/luisplata/mmo-api-server/internal/network"
+	"github.com/luisplata/mmo-api-server/internal/protocol"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
@@ -71,6 +72,7 @@ func TestServeConnConsumesFrameSource(t *testing.T) {
 	src := &replaySource{hold: hold, frames: [][]byte{
 		clientFrame(t, srv.reg, &mmov1.Hello{ProtoVer: testVersion}, 0, 0),
 		clientFrame(t, srv.reg, &mmov1.AuthRequest{Username: "alice", Password: "pw"}, 0, 0),
+		clientFrame(t, srv.reg, &mmov1.JoinRoom{Mode: protocol.JoinRoomNextAvailable}, 0, 0),
 		clientFrame(t, srv.reg, &mmov1.SelectCharacter{CharacterId: testCharID}, 0, 0),
 		clientFrame(t, srv.reg, &mmov1.EnterWorld{}, 0, 0),
 	}}

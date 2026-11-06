@@ -3,7 +3,7 @@
 // The registry maps envelope type ids (u16) to their protobuf message
 // types so a frame's payload can be encoded/decoded by dispatch. The
 // type-id table is documented in the proto/v1/world.proto header (ids
-// 1–20) and parity is enforced by TestWorldRegistryCompleteness.
+// 1–22) and parity is enforced by TestWorldRegistryCompleteness.
 package protocol
 
 import (
@@ -19,6 +19,12 @@ import (
 // when a message has no registered type id (spec S6.2).
 var ErrUnknownType = errors.New("protocol: unknown message type")
 
+// JoinRoom mode values (proto/v1/world.proto); Create/ByCode stay A1-gated.
+const (
+	JoinRoomNextAvailable int32 = 1
+	JoinRoomByID          int32 = 2
+)
+
 // Registry dispatches envelope type ids to protobuf messages.
 type Registry struct {
 	byID   map[uint16]proto.Message // type id -> prototype message
@@ -26,7 +32,7 @@ type Registry struct {
 }
 
 // NewWorldRegistry returns the registry matching the contract type-id
-// table of proto/v1/world.proto (design D2 order, ids 1–20).
+// table of proto/v1/world.proto (design D2 order, ids 1–22).
 func NewWorldRegistry() *Registry {
 	r := &Registry{
 		byID:   make(map[uint16]proto.Message),
@@ -56,6 +62,10 @@ func NewWorldRegistry() *Registry {
 	// the server echoes immediately, off the simulation tick.
 	r.register(19, &mmov1.Ping{})
 	r.register(20, &mmov1.Pong{})
+	// Room lobby (additive, spec room-lobby): the selecting phase joins a
+	// room before EnterWorld.
+	r.register(21, &mmov1.JoinRoom{})
+	r.register(22, &mmov1.JoinRoomResponse{})
 	return r
 }
 

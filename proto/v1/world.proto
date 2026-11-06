@@ -36,10 +36,12 @@
 //	18  SelectCharacterResponse
 //	19  Ping
 //	20  Pong
+//	21  JoinRoom
+//	22  JoinRoomResponse
 //
 // New message types take new additive ids. Ids 13-18 enable the
 // character-management flow (list/create/select) on top of an existing
-// session; ids 19-20 add the application-level latency probe. All are
+// session; ids 19-22 add latency and room-lobby messages. All are
 // additive and never reuse a prior field or id.
 //
 // Entity shape (design D3, v2): position is Vec3 (x, y, z) where y is
@@ -270,4 +272,18 @@ message Ping {
 message Pong {
   uint64 nonce = 1;
   int64 clientTime = 2;
+}
+
+// ─── Room lobby (additive, type ids 21-22) ──────────────────────────
+// mode: 1 NextAvailable, 2 ByID (Create/ByCode are A1-gated).
+message JoinRoom {
+  int32 mode = 1;
+  string roomId = 2;
+}
+
+// JoinRoomResponse: zero capacity/roomId means nothing was reserved.
+message JoinRoomResponse {
+  string roomId = 1;
+  int32 capacity = 2;
+  int32 occupancy = 3;
 }

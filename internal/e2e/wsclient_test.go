@@ -193,6 +193,11 @@ func (w *wsClient) createCharacter(t *testing.T, templateID, name string) *mmov1
 }
 
 func (w *wsClient) selectCharacter(t *testing.T, charID string) *mmov1.SelectCharacterResponse {
+	// P15: a room is required alongside the character before EnterWorld.
+	w.send(t, &mmov1.JoinRoom{Mode: protocol.JoinRoomNextAvailable})
+	if jr := requireWS[*mmov1.JoinRoomResponse](t, w, "JoinRoomResponse"); jr.GetRoomId() == "" {
+		t.Fatalf("%s: JoinRoom rejected: %+v", w.name, jr)
+	}
 	w.send(t, &mmov1.SelectCharacter{CharacterId: charID})
 	return requireWS[*mmov1.SelectCharacterResponse](t, w, "SelectCharacterResponse")
 }

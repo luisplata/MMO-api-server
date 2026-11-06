@@ -25,6 +25,7 @@ import (
 	"github.com/luisplata/mmo-api-server/internal/character"
 	"github.com/luisplata/mmo-api-server/internal/network"
 	"github.com/luisplata/mmo-api-server/internal/protocol"
+	"github.com/luisplata/mmo-api-server/internal/rooms"
 	"github.com/luisplata/mmo-api-server/internal/template"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
@@ -79,6 +80,9 @@ type Config struct {
 	// SelectCharacter; when nil, SelectCharacter is answered with a not-ok
 	// response.
 	Spawn SpawnResolver
+
+	// Rooms allocates the JoinRoom slot (capacity 2, 30 s lease).
+	Rooms *rooms.Manager
 
 	// Now supplies the current time; defaults to time.Now. Injected so
 	// handshake-timeout tests are deterministic.
@@ -159,6 +163,10 @@ type Session struct {
 	// time (design D4). It is consumed by the wiring layer when the player
 	// enters the world.
 	characterSpawn *mmov1.Vec3
+
+	// roomRes/roomID are the JoinRoom slot; committed on EnterWorld.
+	roomRes rooms.Reservation
+	roomID  rooms.RoomID
 
 	// handshakeDeadline is now()+HandshakeTimeout at construction (or
 	// zero when timeouts are disabled).
@@ -265,6 +273,9 @@ func (s *Session) CharacterSpawn() *mmov1.Vec3 { return s.characterSpawn }
 // TemplateID drive the world entity once the session enters the world.
 func (s *Session) ActiveCharacter() *character.Character { return s.activeCharacter }
 
+// ActiveRoomID returns the room reserved by JoinRoom, or "" before one.
+func (s *Session) ActiveRoomID() string { return string(s.roomID) }
+
 // HandleTCP processes one inbound TCP frame and drives the state
 // machine. On a protocol violation (undecodable frame, out-of-order
 // message, version mismatch, auth failure, expired deadline) the session
@@ -314,6 +325,8 @@ func (s *Session) dispatch(env *protocol.Envelope, msg proto.Message) error {
 		return s.handleCreateCharacter(m)
 	case *mmov1.SelectCharacter:
 		return s.handleSelectCharacter(m)
+	case *mmov1.JoinRoom:
+		return s.handleJoinRoom(m)
 	case *mmov1.EnterWorld:
 		return s.handleEnterWorld()
 	case *mmov1.Ack:
@@ -390,13 +403,14 @@ func (s *Session) handleAuth(req *mmov1.AuthRequest) error {
 // entering + EnterWorld → in-world, acknowledged with a needs-ack
 // WorldSnapshot carrying the next monotonic seq.
 //
-// Design D4: the session only reaches entering through a successful
-// SelectCharacter (which activates a character), so an EnterWorld before
-// a character is chosen is rejected here — the session is still in
-// selecting and the state check fails with ErrIllegalMessage.
+// handleEnterWorld commits the room lease; entering already implies both
+// a room and a character (P15).
 func (s *Session) handleEnterWorld() error {
 	if s.state != StateEntering {
 		return s.protocolError("EnterWorld received in %s", s.state)
+	}
+	if err := s.cfg.Rooms.Commit(s.roomRes); err != nil {
+		return s.closeWith(fmt.Errorf("%w: commit room reservation: %v", ErrIllegalMessage, err))
 	}
 	if err := s.moveTo(StateInWorld); err != nil {
 		return err
@@ -404,6 +418,60 @@ func (s *Session) handleEnterWorld() error {
 	// v1 sends an empty WorldSnapshot: the session layer has no world
 	// state of its own — PR4 (world sim) fills the entity list.
 	return s.sendTCP(&mmov1.WorldSnapshot{}, true)
+}
+
+// handleJoinRoom reserves a room slot in selecting; the session enters
+// only once a character is also selected (P15).
+func (s *Session) handleJoinRoom(req *mmov1.JoinRoom) error {
+	if s.state != StateSelecting {
+		return s.protocolError("JoinRoom received in %s", s.state)
+	}
+	var res rooms.Reservation
+	var id rooms.RoomID
+	if s.roomID != "" || s.cfg.Rooms == nil {
+		return s.sendTCP(&mmov1.JoinRoomResponse{}, false)
+	}
+	switch req.Mode {
+	case protocol.JoinRoomNextAvailable:
+		res, id, _ = s.reserveNext()
+	case protocol.JoinRoomByID:
+		if req.RoomId == "" {
+			return s.sendTCP(&mmov1.JoinRoomResponse{}, false)
+		}
+		id = rooms.RoomID(req.RoomId)
+		var err error
+		if res, err = s.cfg.Rooms.Reserve(id); err != nil {
+			return s.sendTCP(&mmov1.JoinRoomResponse{}, false)
+		}
+	default:
+		return s.sendTCP(&mmov1.JoinRoomResponse{}, false)
+	}
+	s.roomRes, s.roomID = res, id
+	if s.activeCharacter != nil {
+		if err := s.moveTo(StateEntering); err != nil {
+			return err
+		}
+	}
+	return s.sendTCP(&mmov1.JoinRoomResponse{
+		RoomId:    string(id),
+		Capacity:  rooms.Capacity,
+		Occupancy: int32(s.cfg.Rooms.Occupancy(id) + s.cfg.Rooms.Reserved(id)),
+	}, false)
+}
+
+// reserveNext fills default, then any free room, then room-N.
+func (s *Session) reserveNext() (rooms.Reservation, rooms.RoomID, bool) {
+	for _, id := range append([]rooms.RoomID{rooms.DefaultRoom}, s.cfg.Rooms.RoomIDs()...) {
+		if res, err := s.cfg.Rooms.Reserve(id); err == nil {
+			return res, id, true
+		}
+	}
+	for i := 1; ; i++ {
+		id := rooms.RoomID(fmt.Sprintf("room-%d", i))
+		if res, err := s.cfg.Rooms.Reserve(id); err == nil {
+			return res, id, true
+		}
+	}
 }
 
 // handleListCharacters answers a ListCharacters in the selecting phase
@@ -487,13 +555,13 @@ func (s *Session) handleSelectCharacter(req *mmov1.SelectCharacter) error {
 		return s.sendTCP(&mmov1.SelectCharacterResponse{Ok: false, ErrorMessage: "character not owned by account"}, false)
 	}
 	spawn := s.cfg.Spawn.SpawnFor(c.ID)
-	// A valid select activates the character and advances the machine to
-	// entering (design D4); EnterWorld then moves it to in-world.
-	if err := s.moveTo(StateEntering); err != nil {
-		return err
-	}
 	s.activeCharacter = c
 	s.characterSpawn = spawn
+	if s.roomID != "" {
+		if err := s.moveTo(StateEntering); err != nil {
+			return err
+		}
+	}
 	return s.sendTCP(&mmov1.SelectCharacterResponse{
 		Ok:        true,
 		Character: characterToProto(c),
@@ -598,6 +666,11 @@ func (s *Session) Close() error {
 		return nil
 	}
 	s.state, _ = s.state.Transition(StateClosed) // legal from every live state
+	if s.roomID != "" {
+		s.cfg.Rooms.Release(s.roomRes)
+		s.roomID = ""
+		s.roomRes = rooms.Reservation{}
+	}
 	s.udpBound = false
 	s.udpPeer = nil
 	s.udpToken = nil

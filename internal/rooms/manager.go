@@ -15,6 +15,9 @@ import (
 // Capacity is the fixed number of active players per room (design: 2).
 const Capacity = 2
 
+// DefaultRoom is the legacy world's room; the lobby fills it first.
+const DefaultRoom RoomID = "default"
+
 // Errors returned by the Manager.
 var (
 	// ErrRoomFull is returned by Reserve when the room has no free slot.
@@ -148,6 +151,17 @@ func (m *Manager) releaseLocked(token uint64) {
 	if room.slots() == 0 {
 		delete(m.rooms, res.roomID)
 	}
+}
+
+// RoomIDs snapshots the tracked rooms so the lobby can reuse a free one.
+func (m *Manager) RoomIDs() []RoomID {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ids := make([]RoomID, 0, len(m.rooms))
+	for id := range m.rooms {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 // Occupancy reports the committed active players in a room (0 for an

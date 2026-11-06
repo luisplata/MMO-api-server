@@ -105,6 +105,7 @@ type Server struct {
 	templates  template.TemplateRepository
 	characters character.CharacterRepository
 	spawn      session.SpawnResolver
+	rooms      *rooms.Manager // local lobby allocator (capacity 2, 30 s lease)
 
 	mu      sync.Mutex
 	players map[string]*player
@@ -145,6 +146,7 @@ func New(cfg Config) (*Server, error) {
 		auth:       devAuthenticator{enabled: cfg.DevAuth},
 		templates:  cfg.Templates,
 		characters: cfg.Characters,
+		rooms:      rooms.NewManager(),
 		players:    make(map[string]*player),
 		charRooms:  make(map[string]rooms.RoomID),
 		wsOrigins:  cfg.WSSOrigins,
@@ -239,6 +241,7 @@ func (s *Server) serveConn(ctx context.Context, src network.FrameSource, tr netw
 		Templates:        s.templates,
 		Characters:       s.characters,
 		Spawn:            s.spawn,
+		Rooms:            s.rooms,
 	})
 	if err != nil {
 		if sink != nil {
@@ -326,12 +329,9 @@ func (s *Server) isRegistered(pid string) bool {
 	return ok
 }
 
-// roomForSession resolves the room a session enters. Room intent on the
-// wire arrives with the lobby slice (P10); until then every session enters
-// the legacy default room. The seam exists so P10 only changes this
-// resolver, not the routing/ownership code.
-func (s *Server) roomForSession(*session.Session) rooms.RoomID {
-	return DefaultRoom
+// roomForSession is the room its JoinRoom reserved (P15).
+func (s *Server) roomForSession(sess *session.Session) rooms.RoomID {
+	return rooms.RoomID(sess.ActiveRoomID())
 }
 
 // enterWorld registers the authenticated player in its room and sends the

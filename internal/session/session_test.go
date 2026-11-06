@@ -22,6 +22,7 @@ import (
 	"github.com/luisplata/mmo-api-server/internal/character"
 	"github.com/luisplata/mmo-api-server/internal/network"
 	"github.com/luisplata/mmo-api-server/internal/protocol"
+	"github.com/luisplata/mmo-api-server/internal/rooms"
 	"github.com/luisplata/mmo-api-server/internal/stats"
 	"github.com/luisplata/mmo-api-server/internal/template"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
@@ -112,6 +113,7 @@ func newTestSession(t *testing.T, mut func(*Config)) (*Session, *mockTransport, 
 				Stats: stats.Stats{HP: 120, Speed: 3, Atk: 10, Def: 8}, CreatedAt: clock.cur},
 		}},
 		Spawn: &fakeSpawnResolver{spawn: mmov1.Vec3{X: 1.5, Y: 0, Z: -2.5}},
+		Rooms: rooms.NewManager(),
 	}
 	if mut != nil {
 		mut(&cfg)
@@ -472,6 +474,7 @@ func TestOutOfOrderMessageCloses(t *testing.T) {
 		{"AuthRequest after auth", func(t *testing.T, s *Session, reg *protocol.Registry) { sendHello(t, s, reg); sendAuth(t, s, reg) }, &mmov1.AuthRequest{Username: "alice", Password: "pw"}},
 		{"Hello in in-world", inWorld, &mmov1.Hello{ProtoVer: testVersion}},
 		{"EnterWorld in in-world", inWorld, &mmov1.EnterWorld{}},
+		{"JoinRoom in in-world", inWorld, &mmov1.JoinRoom{Mode: protocol.JoinRoomNextAvailable}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

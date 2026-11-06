@@ -36,10 +36,12 @@
 //	18  SelectCharacterResponse
 //	19  Ping
 //	20  Pong
+//	21  JoinRoom
+//	22  JoinRoomResponse
 //
 // New message types take new additive ids. Ids 13-18 enable the
 // character-management flow (list/create/select) on top of an existing
-// session; ids 19-20 add the application-level latency probe. All are
+// session; ids 19-22 add latency and room-lobby messages. All are
 // additive and never reuse a prior field or id.
 //
 // Entity shape (design D3, v2): position is Vec3 (x, y, z) where y is
@@ -1520,6 +1522,121 @@ func (x *Pong) GetClientTime() int64 {
 	return 0
 }
 
+// ─── Room lobby (additive, type ids 21-22) ──────────────────────────
+// mode: 1 NextAvailable, 2 ByID (Create/ByCode are A1-gated).
+type JoinRoom struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Mode          int32                  `protobuf:"varint,1,opt,name=mode,proto3" json:"mode,omitempty"`
+	RoomId        string                 `protobuf:"bytes,2,opt,name=roomId,proto3" json:"roomId,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JoinRoom) Reset() {
+	*x = JoinRoom{}
+	mi := &file_v1_world_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JoinRoom) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JoinRoom) ProtoMessage() {}
+
+func (x *JoinRoom) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_world_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JoinRoom.ProtoReflect.Descriptor instead.
+func (*JoinRoom) Descriptor() ([]byte, []int) {
+	return file_v1_world_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *JoinRoom) GetMode() int32 {
+	if x != nil {
+		return x.Mode
+	}
+	return 0
+}
+
+func (x *JoinRoom) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+// JoinRoomResponse: zero capacity/roomId means nothing was reserved.
+type JoinRoomResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        string                 `protobuf:"bytes,1,opt,name=roomId,proto3" json:"roomId,omitempty"`
+	Capacity      int32                  `protobuf:"varint,2,opt,name=capacity,proto3" json:"capacity,omitempty"`
+	Occupancy     int32                  `protobuf:"varint,3,opt,name=occupancy,proto3" json:"occupancy,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JoinRoomResponse) Reset() {
+	*x = JoinRoomResponse{}
+	mi := &file_v1_world_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JoinRoomResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JoinRoomResponse) ProtoMessage() {}
+
+func (x *JoinRoomResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_world_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JoinRoomResponse.ProtoReflect.Descriptor instead.
+func (*JoinRoomResponse) Descriptor() ([]byte, []int) {
+	return file_v1_world_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *JoinRoomResponse) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+func (x *JoinRoomResponse) GetCapacity() int32 {
+	if x != nil {
+		return x.Capacity
+	}
+	return 0
+}
+
+func (x *JoinRoomResponse) GetOccupancy() int32 {
+	if x != nil {
+		return x.Occupancy
+	}
+	return 0
+}
+
 var File_v1_world_proto protoreflect.FileDescriptor
 
 const file_v1_world_proto_rawDesc = "" +
@@ -1624,7 +1741,14 @@ const file_v1_world_proto_rawDesc = "" +
 	"\x05nonce\x18\x01 \x01(\x04R\x05nonce\x12\x1e\n" +
 	"\n" +
 	"clientTime\x18\x02 \x01(\x03R\n" +
-	"clientTimeBGZ<github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1;mmov1\xaa\x02\x06Mmo.V1b\x06proto3"
+	"clientTime\"6\n" +
+	"\bJoinRoom\x12\x12\n" +
+	"\x04mode\x18\x01 \x01(\x05R\x04mode\x12\x16\n" +
+	"\x06roomId\x18\x02 \x01(\tR\x06roomId\"d\n" +
+	"\x10JoinRoomResponse\x12\x16\n" +
+	"\x06roomId\x18\x01 \x01(\tR\x06roomId\x12\x1a\n" +
+	"\bcapacity\x18\x02 \x01(\x05R\bcapacity\x12\x1c\n" +
+	"\toccupancy\x18\x03 \x01(\x05R\toccupancyBGZ<github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1;mmov1\xaa\x02\x06Mmo.V1b\x06proto3"
 
 var (
 	file_v1_world_proto_rawDescOnce sync.Once
@@ -1638,7 +1762,7 @@ func file_v1_world_proto_rawDescGZIP() []byte {
 	return file_v1_world_proto_rawDescData
 }
 
-var file_v1_world_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
+var file_v1_world_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_v1_world_proto_goTypes = []any{
 	(*Vec2)(nil),                    // 0: mmo.v1.Vec2
 	(*Vec3)(nil),                    // 1: mmo.v1.Vec3
@@ -1665,6 +1789,8 @@ var file_v1_world_proto_goTypes = []any{
 	(*SelectCharacterResponse)(nil), // 22: mmo.v1.SelectCharacterResponse
 	(*Ping)(nil),                    // 23: mmo.v1.Ping
 	(*Pong)(nil),                    // 24: mmo.v1.Pong
+	(*JoinRoom)(nil),                // 25: mmo.v1.JoinRoom
+	(*JoinRoomResponse)(nil),        // 26: mmo.v1.JoinRoomResponse
 }
 var file_v1_world_proto_depIdxs = []int32{
 	1,  // 0: mmo.v1.EntityState.pos:type_name -> mmo.v1.Vec3
@@ -1697,7 +1823,7 @@ func file_v1_world_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_v1_world_proto_rawDesc), len(file_v1_world_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   25,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
