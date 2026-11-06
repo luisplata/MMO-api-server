@@ -1,9 +1,8 @@
 package server
 
-// Pure helper tests for the wiring layer (PR4b): the conversion between
-// the wire Vec2 and the sim's internal Vec2, the UDP bind-token
-// classification, and the game.Entity → mmov1.EntityState mapping used by
-// the interest fanout.
+// Pure helper tests for the wiring layer: the conversion between the
+// wire Vec2 and the sim's internal Vec2 and the game.Entity →
+// mmov1.EntityState mapping used by the interest fanout.
 
 import (
 	"testing"
@@ -36,27 +35,6 @@ func TestVecFromProto(t *testing.T) {
 			got := vecFromProto(tc.v)
 			if got.X != tc.want.X || got.Z != tc.want.Z {
 				t.Errorf("vecFromProto(%v) = %v, want %v", tc.v, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestIsBindToken(t *testing.T) {
-	cases := []struct {
-		name           string
-		payload, token []byte
-		want           bool
-	}{
-		{"exact match is the bind", []byte("tok"), []byte("tok"), true},
-		{"different payload is not", []byte("tok"), []byte("other"), false},
-		{"nil token never matches", []byte("tok"), nil, false},
-		{"empty payload does not match", nil, []byte("tok"), false},
-		{"shorter payload is not a prefix match", []byte("t"), []byte("tok"), false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := isBindToken(tc.payload, tc.token); got != tc.want {
-				t.Errorf("isBindToken(%q, %q) = %v, want %v", tc.payload, tc.token, got, tc.want)
 			}
 		})
 	}

@@ -1,7 +1,8 @@
 package server
 
-// P13d runtime contract: Run no longer exposes the legacy reliable TCP
-// lifecycle listener; WSS still serves and UDP survives until P13e.
+// P13e runtime contract: Run exposes exactly one listener — the private
+// WSS upstream. The legacy TCP/UDP defaults the pre-WSS server bound must
+// stay unbound and refuse connections.
 
 import (
 	"context"
@@ -21,7 +22,7 @@ const (
 	// ":8000"); P13d removes that listener and Run must never bind it.
 	legacyTCPAddr = "127.0.0.1:8000"
 	// legacyUDPAddr is the pre-WSS datagram default (":8001"); P13e
-	// removes it, so P13d still binds it when configured.
+	// removes the UDP runtime, so Run must never bind it.
 	legacyUDPAddr = "127.0.0.1:8001"
 )
 
@@ -107,43 +108,9 @@ func handshake(t *testing.T, addr string, srv *Server) {
 	}
 }
 
-// TestRunRefusesLegacyTCPAndRetainsUDP pins 13d.1: Run serves WSS,
-// refuses legacy TCP, and still binds legacy UDP (P13e removes it).
-func TestRunRefusesLegacyTCPAndRetainsUDP(t *testing.T) {
-	requireFreeLegacyPorts(t)
-	addr, srv, cancel, done := startRun(t, Config{
-		UDPAddr: legacyUDPAddr, WSSOrigins: []string{"allowed.example"},
-		TickRate: game.TickRate, DevAuth: true, MinProtoVer: 1, MaxProtoVer: 9,
-	})
-	handshake(t, addr, srv)
-
-	if conn, err := net.DialTimeout("tcp", legacyTCPAddr, 250*time.Millisecond); err == nil {
-		_ = conn.Close()
-		t.Fatalf("legacy TCP %s accepted a connection; Run must bind only the WSS upstream", legacyTCPAddr)
-	}
-	// The legacy datagram socket is still held by Run until P13e.
-	if pc, err := net.ListenPacket("udp", legacyUDPAddr); err == nil {
-		_ = pc.Close()
-		t.Fatalf("legacy UDP %s is free; P13d still runs the UDP loop", legacyUDPAddr)
-	}
-
-	waitRun(t, cancel, done)
-	// Shutdown released both listeners.
-	if pc, err := net.ListenPacket("udp", legacyUDPAddr); err != nil {
-		t.Fatalf("legacy UDP %s still held after shutdown: %v", legacyUDPAddr, err)
-	} else {
-		_ = pc.Close()
-	}
-	if conn, err := net.DialTimeout("tcp", addr, 250*time.Millisecond); err == nil {
-		_ = conn.Close()
-		t.Fatalf("WSS listener %s still accepts after shutdown", addr)
-	}
-}
-
-// TestRunWithoutUDPLeavesLegacyPortsFree triangulates the same contract
-// with UDPAddr empty: Run binds neither legacy default while the WSS
-// upstream serves.
-func TestRunWithoutUDPLeavesLegacyPortsFree(t *testing.T) {
+// TestRunBindsOnlyWSSUpstream pins 13e.1: Run serves WSS and leaves both
+// legacy TCP/UDP defaults unbindable.
+func TestRunBindsOnlyWSSUpstream(t *testing.T) {
 	requireFreeLegacyPorts(t)
 	addr, srv, cancel, done := startRun(t, Config{
 		WSSOrigins: []string{"allowed.example"},
@@ -151,18 +118,22 @@ func TestRunWithoutUDPLeavesLegacyPortsFree(t *testing.T) {
 	})
 	handshake(t, addr, srv)
 
-	if srv.udp != nil {
-		t.Fatalf("udp socket = %v, want nil with UDPAddr empty", srv.udp)
-	}
 	if conn, err := net.DialTimeout("tcp", legacyTCPAddr, 250*time.Millisecond); err == nil {
 		_ = conn.Close()
-		t.Fatalf("legacy TCP %s accepted a connection with UDPAddr empty", legacyTCPAddr)
+		t.Fatalf("legacy TCP %s accepted a connection; Run must bind only the WSS upstream", legacyTCPAddr)
 	}
+	// The legacy datagram socket must be free: binding it proves no UDP
+	// listener holds it.
 	pc, err := net.ListenPacket("udp", legacyUDPAddr)
 	if err != nil {
-		t.Fatalf("legacy UDP %s is held although UDPAddr is empty: %v", legacyUDPAddr, err)
+		t.Fatalf("legacy UDP %s is held by a listener: %v", legacyUDPAddr, err)
 	}
 	_ = pc.Close()
 
 	waitRun(t, cancel, done)
+	// Shutdown closed the WSS listener.
+	if conn, err := net.DialTimeout("tcp", addr, 250*time.Millisecond); err == nil {
+		_ = conn.Close()
+		t.Fatalf("WSS listener %s still accepts after shutdown", addr)
+	}
 }

@@ -1,8 +1,9 @@
 // Package server wires the protocol, session, network and simulation
 // layers into a running MMO server: the private WSS upstream (TLS
-// terminates at the proxy) drives sessions, a UDP loop still feeds legacy
-// MoveInputs until P13e removes it, and a single sim-owner goroutine runs
-// the 20 Hz tick and fans out interest events.
+// terminates at the proxy) drives sessions through the handshake and
+// carries lifecycle plus realtime frames, and a single sim-owner goroutine
+// runs the deterministic 20 Hz tick, registers/removes players and fans
+// out interest events.
 //
 // The package lives in internal/server (not cmd/server) so the headless
 // E2E batch can import it; cmd/server/main.go is a thin flag parser.
@@ -30,9 +31,6 @@ import (
 
 // Config carries the server tunables (design PR4b).
 type Config struct {
-	// UDPAddr is the legacy datagram socket; empty disables it. It stays
-	// configurable until P13e removes the UDP runtime.
-	UDPAddr string
 	// WSSAddr is the private upstream WebSocket listener (TLS terminates
 	// at the proxy). It is the server's only listen address; empty is a
 	// boot error.
@@ -88,16 +86,15 @@ type player struct {
 	roomID rooms.RoomID
 }
 
-// Server owns the WSS listener, the legacy UDP socket, the session
-// registry and the simulation. The player map is guarded by mu: the UDP
-// loop, the per-conn goroutines and the sim-owner goroutine all touch it.
+// Server owns the WSS listener, the session registry and the simulation.
+// The player map is guarded by mu: the per-conn goroutines and the
+// sim-owner goroutine both touch it.
 type Server struct {
 	cfg Config
 	reg *protocol.Registry
 	// sim is the default (legacy) room's simulation — the world the
 	// pre-rooms server ran. It is the same pointer the runner maps under
-	// DefaultRoom; the legacy UDP/fanout paths use it directly (P7 adds
-	// character→room routing).
+	// DefaultRoom; P7's character→room routing resolves every other room.
 	sim  *game.Simulation
 	auth session.Authenticator
 
@@ -108,11 +105,6 @@ type Server struct {
 	templates  template.TemplateRepository
 	characters character.CharacterRepository
 	spawn      session.SpawnResolver
-
-	// udp is the packet conn snapshots are sent over. It is assigned in
-	// Run before any goroutine starts and never mutated afterwards, so
-	// the sink may read it without the mutex.
-	udp net.PacketConn
 
 	mu      sync.Mutex
 	players map[string]*player
@@ -176,33 +168,14 @@ func New(cfg Config) (*Server, error) {
 	return srv, nil
 }
 
-// Run starts the WSS upstream, the legacy UDP loop and the sim loop and
-// blocks until ctx is cancelled (SIGINT/SIGTERM via signal.NotifyContext
-// in main), then shuts down gracefully: the listeners close, sessions and
-// sinks are torn down, and every goroutine is joined.
+// Run starts the WSS upstream and the sim loop and blocks until ctx is
+// cancelled (SIGINT/SIGTERM via signal.NotifyContext in main), then shuts
+// down gracefully: the listener closes, sessions and sinks are torn down,
+// and every goroutine is joined.
 func (s *Server) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	s.cancel = cancel
-
-	var udpClose func()
-	if s.cfg.UDPAddr != "" {
-		udpConn, err := net.ListenPacket("udp", s.cfg.UDPAddr)
-		if err != nil {
-			return fmt.Errorf("server: udp listen %s: %w", s.cfg.UDPAddr, err)
-		}
-		s.udp = udpConn
-		udpClose = func() { _ = udpConn.Close() }
-		defer udpClose()
-		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
-			if err := s.udpLoop(ctx, udpConn); err != nil {
-				log.Printf("server: udp loop failed: %v", err)
-				s.cancel()
-			}
-		}()
-	}
 
 	var wsClose func()
 	if s.cfg.WSSAddr != "" {
@@ -238,9 +211,6 @@ func (s *Server) Run(ctx context.Context) error {
 	<-ctx.Done()
 	if wsClose != nil {
 		wsClose()
-	}
-	if udpClose != nil {
-		udpClose()
 	}
 
 	s.mu.Lock()

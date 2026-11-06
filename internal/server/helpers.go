@@ -3,8 +3,6 @@ package server
 // Pure helpers shared by the wiring paths.
 
 import (
-	"bytes"
-
 	"github.com/luisplata/mmo-api-server/internal/game"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
@@ -28,16 +26,6 @@ func spawnFromProto(v *mmov1.Vec3) game.Vec2 {
 		return game.Vec2{}
 	}
 	return game.Vec2{X: v.X, Z: v.Z}
-}
-
-// isBindToken reports whether a UDP datagram payload IS the bind token
-// (spec R13): the first packet after auth binds the session, and the
-// bind datagram itself must not be dispatched as an input.
-func isBindToken(payload, token []byte) bool {
-	if len(token) == 0 {
-		return false
-	}
-	return bytes.Equal(payload, token)
 }
 
 // entityStateFromGame maps the sim's internal entity to its wire state —
