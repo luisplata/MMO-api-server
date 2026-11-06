@@ -24,6 +24,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/mmo-ser
 FROM alpine:3.21
 RUN adduser -D -u 10001 mmo
 COPY --from=builder /out/mmo-server /usr/local/bin/mmo-server
+# The boot flags default to data/templates.json and data/characters.json;
+# ship the committed seed files so the fail-fast loader succeeds inside the
+# container. mmo owns the directory because the character store writes there.
+WORKDIR /app
+COPY --from=builder --chown=10001:10001 /src/data ./data
 USER mmo
 EXPOSE 8080/tcp
 ENTRYPOINT ["/usr/local/bin/mmo-server"]

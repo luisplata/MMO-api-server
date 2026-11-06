@@ -61,11 +61,11 @@ type Config struct {
 	HandshakeTimeout time.Duration
 
 	// Templates is the character-template catalog the session's
-	// character-management flow consults (design D1). Optional; when nil
-	// the session answers CreateCharacter with a not-ok response.
+	// character-management flow consults (design D1). Required: the server
+	// refuses to boot without it.
 	Templates template.TemplateRepository
-	// Characters is the character store (design D1). Optional; when nil
-	// the session answers List/Create/Select with a not-ok/empty response.
+	// Characters is the character store (design D1). Required: the server
+	// refuses to boot without it.
 	Characters character.CharacterRepository
 	// Spawn resolves the spawn position for a selected character (design
 	// D4). Optional; when nil the server builds a default resolver from
@@ -139,6 +139,12 @@ func New(cfg Config) (*Server, error) {
 	}
 	if cfg.MinProtoVer <= 0 || cfg.MaxProtoVer < cfg.MinProtoVer {
 		return nil, errors.New("server: invalid protocol version range")
+	}
+	if cfg.Templates == nil {
+		return nil, errors.New("server: template repository is required")
+	}
+	if cfg.Characters == nil {
+		return nil, errors.New("server: character repository is required")
 	}
 	srv := &Server{
 		cfg:        cfg,

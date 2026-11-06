@@ -95,6 +95,7 @@ func TestRunBindsOnlyWSSUpstream(t *testing.T) {
 	srv, err := New(Config{
 		WSSAddr: addr, WSSOrigins: []string{"allowed.example"},
 		TickRate: game.TickRate, DevAuth: true, MinProtoVer: 1, MaxProtoVer: 9,
+		Templates: testTemplateRepo(), Characters: testCharacterRepo("alice"),
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -147,6 +148,7 @@ func TestRunGracefulShutdownClosesWSS(t *testing.T) {
 	srv, err := New(Config{
 		WSSAddr: addr, WSSOrigins: []string{"allowed.example"},
 		TickRate: game.TickRate, DevAuth: true, MinProtoVer: 1, MaxProtoVer: 9,
+		Templates: testTemplateRepo(), Characters: testCharacterRepo("alice"),
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)

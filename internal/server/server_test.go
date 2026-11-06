@@ -130,6 +130,8 @@ func TestNewServerValidation(t *testing.T) {
 		TickRate:    game.TickRate,
 		DevAuth:     true,
 		MinProtoVer: 1, MaxProtoVer: 1,
+		Templates:  testTemplateRepo(),
+		Characters: testCharacterRepo("alice"),
 	}
 	if _, err := New(valid); err != nil {
 		t.Fatalf("valid config rejected: %v", err)

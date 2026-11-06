@@ -97,6 +97,33 @@ func TestMainBindsAContainerReachableWSSAddress(t *testing.T) {
 	)
 }
 
+// TestMainLoadsCharacterData pins the P17 boot wiring: the deployed binary
+// loads the committed template/character repositories and injects them into
+// server.Config instead of leaving List/Create/Select unconfigured.
+func TestMainLoadsCharacterData(t *testing.T) {
+	const name = "cmd/server/main.go"
+	body := readArtifact(t, name)
+	requireContains(t, name, body,
+		`flag.String("templates", "data/templates.json"`,
+		`flag.String("characters", "data/characters.json"`,
+		"server.LoadRepositories(",
+		"repos.Templates",
+		"repos.Characters",
+	)
+}
+
+// TestDockerfileShipsCharacterData pins the runtime image to the committed
+// data files the boot flags default to; without them the fail-fast boot
+// would abort inside the container.
+func TestDockerfileShipsCharacterData(t *testing.T) {
+	const name = "Dockerfile"
+	body := readArtifact(t, name)
+	requireContains(t, name, body,
+		"WORKDIR /app",
+		"COPY --from=builder --chown=10001:10001 /src/data ./data",
+	)
+}
+
 // TestGoServerOwnsNoTLSMaterial proves TLS never enters the Go process.
 func TestGoServerOwnsNoTLSMaterial(t *testing.T) {
 	for _, name := range []string{"cmd/server/main.go", "internal/server/server.go", "internal/server/ws.go"} {

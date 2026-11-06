@@ -26,6 +26,8 @@ func main() {
 	spawnX := flag.Float64("spawn-x", 0, "default spawn position X (issued by dev auth)")
 	spawnZ := flag.Float64("spawn-z", 0, "default spawn position Z (issued by dev auth)")
 	mapFile := flag.String("map", "", "canonical <name>.heightmap to load (with its <name>.manifest sidecar); empty = embedded hills fixture")
+	templatesFile := flag.String("templates", "data/templates.json", "character-template catalog JSON loaded at boot")
+	charactersFile := flag.String("characters", "data/characters.json", "character store JSON loaded at boot")
 	flag.Parse()
 
 	// Boot the map (design D7, spec WTM-4/WTM-5): a -map override loads
@@ -39,6 +41,15 @@ func main() {
 	}
 	log.Printf("server: map active: %s", mapIdentity(*mapFile))
 
+	// Load the character service before opening the listener: missing or
+	// corrupt data is fatal, so the deployed server never starts with
+	// List/Create/Select unconfigured (P17).
+	repos, err := server.LoadRepositories(*templatesFile, *charactersFile)
+	if err != nil {
+		log.Fatalf("server: repositories: %v", err)
+	}
+	log.Printf("server: character service loaded: templates=%s characters=%s", *templatesFile, *charactersFile)
+
 	srv, err := server.New(server.Config{
 		WSSAddr:          *wssAddr,
 		WSSOrigins:       splitOrigins(*wssOrigins),
@@ -50,6 +61,8 @@ func main() {
 		MaxProtoVer:      2,
 		Heights:          heights,
 		HandshakeTimeout: 10 * time.Second,
+		Templates:        repos.Templates,
+		Characters:       repos.Characters,
 	})
 	if err != nil {
 		log.Fatalf("server: %v", err)

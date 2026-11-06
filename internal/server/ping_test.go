@@ -24,6 +24,7 @@ func TestPingFloodDoesNotPerturbTickCadence(t *testing.T) {
 	srv, err := New(Config{
 		WSSAddr: "127.0.0.1:0", TickRate: game.TickRate, DevAuth: true,
 		MinProtoVer: 1, MaxProtoVer: 9,
+		Templates: testTemplateRepo(), Characters: testCharacterRepo("alice"),
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
