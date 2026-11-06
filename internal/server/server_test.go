@@ -145,30 +145,20 @@ func newInWorldSession(t *testing.T, reg *protocol.Registry, username string) *s
 	return sess
 }
 
-// addTestPlayer registers a player in the server map (as enterWorld
-// does) with a mock transport, no TCP conn, and a bounded outbound Sink
-// (design P2) whose realtime writer delivers over the server's fake
-// PacketConn.
-func addTestPlayer(t *testing.T, srv *Server, id string, sess *session.Session) {
+// addTestPlayer registers a player in the server map (as enterWorld does)
+// with a mock transport and a recording outbound Sink (design P2), and
+// returns that sink so the caller observes the delivered frames.
+func addTestPlayer(t *testing.T, srv *Server, id string, sess *session.Session) *testSink {
 	t.Helper()
 	if err := srv.bindCharacter(id, DefaultRoom); err != nil {
 		t.Fatalf("bindCharacter(%s): %v", id, err)
 	}
-	sink := network.NewSink(
-		func([]byte) error { return nil },
-		func(frame []byte) error {
-			peer := sess.UDPPeer()
-			if peer == nil {
-				return nil
-			}
-			return network.SendDatagram(srv.udp, peer, frame)
-		},
-		func() error { return nil },
-	)
+	ts := newTestSink(16)
+	t.Cleanup(func() { _ = ts.sink.Close() })
 	srv.mu.Lock()
-	srv.players[id] = &player{sess: sess, tr: &mockTransport{}, sink: sink}
+	srv.players[id] = &player{sess: sess, sink: ts.sink}
 	srv.mu.Unlock()
-	t.Cleanup(func() { _ = sink.Close() })
+	return ts
 }
 
 // TestNewServerValidation pins the constructor contract: empty listen

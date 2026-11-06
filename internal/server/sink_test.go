@@ -1,39 +1,16 @@
 package server
 
 // Snapshot sink tests: SendSnapshot must deliver a per-player snapshot
-// datagram only when the player is registered with a sink AND its session
-// has a UDP peer bound — never for unknown players or unbound sessions.
-// Delivery is async: the player's outbound Sink (design P2) writes the
-// datagram on its own goroutine, so a slow peer cannot stall the
-// sim-owner goroutine. All over a fake PacketConn.
+// only to the addressed player's sink — never to an unknown player and
+// never to every connected player. Delivery is async: the player's
+// outbound Sink (design P2) writes the frame on its own goroutine, so a
+// slow peer cannot stall the sim-owner goroutine.
 
 import (
 	"testing"
-	"time"
 
-	"github.com/luisplata/mmo-api-server/internal/protocol"
-	"github.com/luisplata/mmo-api-server/internal/session"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
-
-// waitForWrites blocks until the fake PacketConn has recorded at least n
-// datagrams, returning a snapshot of all recorded writes.
-func waitForWrites(t *testing.T, pc *fakePacketConn, n int) []fakeWrite {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		pc.mu.Lock()
-		writes := append([]fakeWrite(nil), pc.writes...)
-		pc.mu.Unlock()
-		if len(writes) >= n {
-			return writes
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %d datagrams; got %d", n, len(writes))
-		}
-		time.Sleep(time.Millisecond)
-	}
-}
 
 func TestSendSnapshot(t *testing.T) {
 	snap := &mmov1.Snapshot{
@@ -44,78 +21,38 @@ func TestSendSnapshot(t *testing.T) {
 	}
 
 	cases := []struct {
-		name  string
-		setup func(t *testing.T, srv *Server, sess *session.Session)
-		want  int // expected datagrams written
+		name     string
+		playerID string // the snapshot target
+		want     int    // expected realtime frames written to the registered player
 	}{
-		{
-			name: "unknown player skipped",
-			setup: func(t *testing.T, srv *Server, sess *session.Session) {
-				// "alice" never registered in the server map.
-			},
-			want: 0,
-		},
-		{
-			name: "player without udp peer skipped",
-			setup: func(t *testing.T, srv *Server, sess *session.Session) {
-				addTestPlayer(t, srv, testCharID, sess)
-			},
-			want: 0,
-		},
-		{
-			name: "bound player receives datagram",
-			setup: func(t *testing.T, srv *Server, sess *session.Session) {
-				addTestPlayer(t, srv, testCharID, sess)
-				if err := sess.HandleUDP(sess.UDPToken(), fakeAddr("10.0.0.1:9000")); err != nil {
-					t.Fatalf("bind: %v", err)
-				}
-			},
-			want: 1,
-		},
+		{"unknown player skipped", "ghost", 0},
+		{"registered player receives snapshot", testCharID, 1},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := newTestServer(t)
 			sess := newInWorldSession(t, srv.reg, "alice")
-			tc.setup(t, srv, sess)
+			ts := addTestPlayer(t, srv, testCharID, sess)
 
-			if err := srv.SendSnapshot(testCharID, snap); err != nil {
+			if err := srv.SendSnapshot(tc.playerID, snap); err != nil {
 				t.Fatalf("SendSnapshot: %v", err)
 			}
-			pc := srv.udp.(*fakePacketConn)
 
 			if tc.want == 0 {
-				// Realtime was never called, so no datagram can appear; a
-				// short settle guards against a spurious async write.
-				time.Sleep(20 * time.Millisecond)
-				pc.mu.Lock()
-				got := len(pc.writes)
-				pc.mu.Unlock()
-				if got != 0 {
-					t.Fatalf("datagrams written = %d, want 0", got)
-				}
+				// Addressed to an unknown player: the registered player's
+				// sink must stay silent.
+				ts.expectNoFrames(t)
 				return
 			}
 
-			w := waitForWrites(t, pc, 1)[0]
-			if w.addr.String() != "10.0.0.1:9000" {
-				t.Errorf("datagram addr = %v, want the bound peer", w.addr)
-			}
-			env, err := protocol.DecodeEnvelope(w.b)
-			if err != nil {
-				t.Fatalf("decode datagram: %v", err)
-			}
+			env, msg := decodeFrame(t, srv, ts.nextRealtime(t))
 			if env.Version != testVersion {
 				t.Errorf("envelope version = %d, want negotiated %d", env.Version, testVersion)
 			}
-			msg, err := srv.reg.DecodeMessage(*env)
-			if err != nil {
-				t.Fatalf("registry decode: %v", err)
-			}
 			got, ok := msg.(*mmov1.Snapshot)
 			if !ok {
-				t.Fatalf("datagram carries %T, want *mmov1.Snapshot", msg)
+				t.Fatalf("frame carries %T, want *mmov1.Snapshot", msg)
 			}
 			if got.Seq != 42 {
 				t.Errorf("snapshot seq = %d, want 42", got.Seq)

@@ -2,17 +2,13 @@ package server
 
 // Non-fatal write path (design P3, spec "Sink no fatal"): a peer whose
 // outbound Sink write fails MUST tear down only its own connection — the
-// simulation keeps stepping and the other peers keep receiving. Before
-// P3 the spawn/despawn fanout wrote the target's raw TCP conn inline (a
-// synchronous, unbounded write on the sim-owner goroutine) and enterWorld
-// returned the raw WriteFrame error; a broken client could block the tick
-// or leave its conn half-torn. After P3 both paths route through
-// Sink.Reliable, so the bounded queue absorbs the write and a failure
-// closes only that conn.
+// simulation keeps stepping and the other peers keep receiving. Both the
+// spawn/despawn fanout (reliable) and the tick snapshots (realtime) route
+// through the per-player Sink, so the bounded queue absorbs the write and
+// a failure closes only that player's connection.
 
 import (
 	"errors"
-	"net"
 	"testing"
 	"time"
 
@@ -26,28 +22,28 @@ func TestFailingSinkIsNonFatal(t *testing.T) {
 	t.Run("reliable fanout failure closes only that conn", func(t *testing.T) {
 		srv := newTestServer(t)
 
-		// Healthy peer A: production-faithful sink over net.Pipe.
-		clientA := mapPlayerWithConn(t, srv, "pA")
-		framesA := startFrameReader(t, clientA)
+		// Healthy peer A: a recording sink.
+		sessA := newInWorldSession(t, srv.reg, "alice")
+		sinkA := addTestPlayer(t, srv, "pA", sessA)
 		if err := srv.sim.RegisterPlayer("pA", game.Vec2{X: 1}, "", stats.Stats{}); err != nil {
 			t.Fatalf("RegisterPlayer(pA): %v", err)
 		}
 
-		// Failing peer B: a sink whose reliable write fails (a broken
-		// conn); its closeConn records that the conn was torn down.
+		// Failing peer B: a sink whose reliable write fails; its close
+		// callback records that the conn was torn down.
 		bClosed := make(chan struct{})
-		serverB, clientB := net.Pipe()
-		_ = clientB.Close() // a broken client end: any direct write fails
-		defer serverB.Close()
-		sessB := newInWorldSession(t, srv.reg, "pB")
+		sessB := newInWorldSession(t, srv.reg, "bob")
 		sinkB := network.NewSink(
-			func([]byte) error { return errors.New("broken tcp") },
+			func([]byte) error { return errors.New("broken socket") },
 			func([]byte) error { return nil },
-			func() error { close(bClosed); return serverB.Close() },
+			func() error { close(bClosed); return nil },
 		)
 		t.Cleanup(func() { _ = sinkB.Close() })
+		if err := srv.bindCharacter("pB", DefaultRoom); err != nil {
+			t.Fatalf("bindCharacter(pB): %v", err)
+		}
 		srv.mu.Lock()
-		srv.players["pB"] = &player{sess: sessB, tr: &mockTransport{}, tcp: serverB, sink: sinkB}
+		srv.players["pB"] = &player{sess: sessB, sink: sinkB}
 		srv.mu.Unlock()
 		if err := srv.sim.RegisterPlayer("pB", game.Vec2{X: 2}, "", stats.Stats{}); err != nil {
 			t.Fatalf("RegisterPlayer(pB): %v", err)
@@ -61,17 +57,17 @@ func TestFailingSinkIsNonFatal(t *testing.T) {
 
 		// A still receives both spawns (peer keeps receiving): pB first,
 		// then pC — the healthy peer is unaffected by B's failing sink.
-		_, firstMsg := decodeFrame(t, srv, nextFrame(t, framesA))
+		_, firstMsg := decodeFrame(t, srv, sinkA.nextReliable(t))
 		if sp, ok := firstMsg.(*mmov1.SpawnEntity); !ok || sp.EntityId != "pB" {
 			t.Fatalf("peer A first frame = %T, want SpawnEntity pB", firstMsg)
 		}
-		_, msg := decodeFrame(t, srv, nextFrame(t, framesA))
+		_, msg := decodeFrame(t, srv, sinkA.nextReliable(t))
 		sp, ok := msg.(*mmov1.SpawnEntity)
 		if !ok || sp.EntityId != "pC" {
 			t.Fatalf("peer A second frame = %T, want SpawnEntity pC", msg)
 		}
 
-		// B's conn was torn down by its failing sink (only B).
+		// B was torn down by its failing sink (only B).
 		select {
 		case <-bClosed:
 		case <-time.After(2 * time.Second):
@@ -87,12 +83,9 @@ func TestFailingSinkIsNonFatal(t *testing.T) {
 	t.Run("realtime snapshot failure keeps the tick stepping", func(t *testing.T) {
 		srv := newTestServer(t)
 
-		// Healthy peer A bound to a UDP peer.
+		// Healthy peer A with a recording sink.
 		sessA := newInWorldSession(t, srv.reg, "alice")
-		addTestPlayer(t, srv, "pA", sessA)
-		if err := sessA.HandleUDP(sessA.UDPToken(), fakeAddr("10.0.0.1:9000")); err != nil {
-			t.Fatalf("bind A: %v", err)
-		}
+		sinkA := addTestPlayer(t, srv, "pA", sessA)
 		if err := srv.sim.RegisterPlayer("pA", game.Vec2{X: 1}, "", stats.Stats{}); err != nil {
 			t.Fatalf("RegisterPlayer(pA): %v", err)
 		}
@@ -102,16 +95,16 @@ func TestFailingSinkIsNonFatal(t *testing.T) {
 		sessB := newInWorldSession(t, srv.reg, "bob")
 		sinkB := network.NewSink(
 			func([]byte) error { return nil },
-			func([]byte) error { return errors.New("broken udp") },
+			func([]byte) error { return errors.New("broken socket") },
 			func() error { close(bClosed); return nil },
 		)
 		t.Cleanup(func() { _ = sinkB.Close() })
-		srv.mu.Lock()
-		srv.players["pB"] = &player{sess: sessB, tr: &mockTransport{}, sink: sinkB}
-		srv.mu.Unlock()
-		if err := sessB.HandleUDP(sessB.UDPToken(), fakeAddr("10.0.0.2:9000")); err != nil {
-			t.Fatalf("bind B: %v", err)
+		if err := srv.bindCharacter("pB", DefaultRoom); err != nil {
+			t.Fatalf("bindCharacter(pB): %v", err)
 		}
+		srv.mu.Lock()
+		srv.players["pB"] = &player{sess: sessB, sink: sinkB}
+		srv.mu.Unlock()
 		if err := srv.sim.RegisterPlayer("pB", game.Vec2{X: 2}, "", stats.Stats{}); err != nil {
 			t.Fatalf("RegisterPlayer(pB): %v", err)
 		}
@@ -124,7 +117,7 @@ func TestFailingSinkIsNonFatal(t *testing.T) {
 			}
 		}
 
-		// B's conn closed by the failed snapshot write.
+		// B's connection closed by the failed snapshot write.
 		select {
 		case <-bClosed:
 		case <-time.After(2 * time.Second):
@@ -132,10 +125,9 @@ func TestFailingSinkIsNonFatal(t *testing.T) {
 		}
 
 		// A kept receiving snapshots (peer keeps receiving).
-		pc := srv.udp.(*fakePacketConn)
-		writes := waitForWrites(t, pc, 1)
-		if writes[0].addr.String() != "10.0.0.1:9000" {
-			t.Errorf("snapshot datagram addr = %v, want A's bound peer", writes[0].addr)
+		_, msg := decodeFrame(t, srv, sinkA.nextRealtime(t))
+		if _, ok := msg.(*mmov1.Snapshot); !ok {
+			t.Fatalf("peer A realtime frame = %T, want *mmov1.Snapshot", msg)
 		}
 	})
 }
