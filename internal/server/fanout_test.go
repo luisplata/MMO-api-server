@@ -18,6 +18,18 @@ import (
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
+// addTargetPlayer registers a player in the server map AND the
+// simulation (the enterWorld state) with a recording sink, returning that
+// sink for reading frames.
+func addTargetPlayer(t *testing.T, srv *Server, id string) *testSink {
+	t.Helper()
+	sink := mapPlayer(t, srv, id)
+	if err := srv.sim.RegisterPlayer(id, game.Vec2{}, "", stats.Stats{}); err != nil {
+		t.Fatalf("RegisterPlayer(%s): %v", id, err)
+	}
+	return sink
+}
+
 // mapPlayer registers a player in the server map only (no sim entry) with
 // a recording outbound Sink (design P3) and returns it.
 func mapPlayer(t *testing.T, srv *Server, id string) *testSink {
@@ -28,18 +40,6 @@ func mapPlayer(t *testing.T, srv *Server, id string) *testSink {
 	srv.mu.Lock()
 	srv.players[id] = &player{sess: sess, sink: sink.sink}
 	srv.mu.Unlock()
-	return sink
-}
-
-// addTargetPlayer registers a player in the server map AND the
-// simulation (the enterWorld state) with a recording sink, returning that
-// sink for reading frames.
-func addTargetPlayer(t *testing.T, srv *Server, id string) *testSink {
-	t.Helper()
-	sink := mapPlayer(t, srv, id)
-	if err := srv.sim.RegisterPlayer(id, game.Vec2{}, "", stats.Stats{}); err != nil {
-		t.Fatalf("RegisterPlayer(%s): %v", id, err)
-	}
 	return sink
 }
 

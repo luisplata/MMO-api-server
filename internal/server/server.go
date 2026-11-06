@@ -177,24 +177,21 @@ func (s *Server) Run(ctx context.Context) error {
 	defer cancel()
 	s.cancel = cancel
 
-	var wsClose func()
-	if s.cfg.WSSAddr != "" {
-		wsLn, err := net.Listen("tcp", s.cfg.WSSAddr)
-		if err != nil {
-			return fmt.Errorf("server: wss listen %s: %w", s.cfg.WSSAddr, err)
-		}
-		httpSrv := &http.Server{Handler: s.wsHandler(ctx), ReadHeaderTimeout: wsReadHeaderTimeout}
-		wsClose = func() { _ = httpSrv.Close() }
-		defer wsClose()
-		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
-			if err := httpSrv.Serve(wsLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				log.Printf("server: wss server failed: %v", err)
-				s.cancel()
-			}
-		}()
+	wsLn, err := net.Listen("tcp", s.cfg.WSSAddr)
+	if err != nil {
+		return fmt.Errorf("server: wss listen %s: %w", s.cfg.WSSAddr, err)
 	}
+	httpSrv := &http.Server{Handler: s.wsHandler(ctx), ReadHeaderTimeout: wsReadHeaderTimeout}
+	wsClose := func() { _ = httpSrv.Close() }
+	defer wsClose()
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		if err := httpSrv.Serve(wsLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("server: wss server failed: %v", err)
+			s.cancel()
+		}
+	}()
 
 	ticker := time.NewTicker(time.Second / time.Duration(s.cfg.TickRate))
 	defer ticker.Stop()
@@ -209,9 +206,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}()
 
 	<-ctx.Done()
-	if wsClose != nil {
-		wsClose()
-	}
+	wsClose()
 
 	s.mu.Lock()
 	for _, p := range s.players {
@@ -226,13 +221,13 @@ func (s *Server) Run(ctx context.Context) error {
 	return nil
 }
 
-// serveConn drives one session over an inbound FrameSource and its
-// outbound Sink: it reads frames via src.Next(), feeds lifecycle frames
-// to the session and routes inbound MoveInputs to the room simulation,
-// then when the session reaches in-world registers the player and sends
-// the REAL WorldSnapshot. On any read error (io.EOF at a clean boundary,
-// oversize frame, network failure) or session protocol error the
-// connection is cleaned up.
+// serveConn drives one session over an inbound FrameSource and its outbound
+// Sink: it reads frames via src.Next(), feeds lifecycle frames to the
+// session and routes inbound MoveInputs to the room simulation, then when
+// the session reaches in-world registers the player and sends the REAL
+// WorldSnapshot. On any read error (io.EOF at a clean boundary, oversize
+// frame, network failure) or session protocol error the connection is
+// cleaned up.
 func (s *Server) serveConn(ctx context.Context, src network.FrameSource, tr network.Transport, sink network.Sink) {
 	sess, err := session.NewSession(s.reg, tr, session.Config{
 		MinProtoVer:      s.cfg.MinProtoVer,

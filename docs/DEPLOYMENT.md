@@ -111,7 +111,7 @@ services:
       - /srv/mmo/maps:/maps:ro
     command:
       - -wss
-      - 10.0.0.10:8080
+      - mmo-server:8080
       - -wss-origins
       - https://game.example.com
       - -map
@@ -211,7 +211,7 @@ Browser ──wss(443)──► nginx (TLS + Host/Origin) ──ws(privado)─�
 
 | Flag | Valor | Por qué |
 |------|-------|---------|
-| `-wss` | `10.0.0.10:8080` (o `127.0.0.1:8080` si el proxy es local) | upstream privado; nunca publicar este puerto |
+| `-wss` | `mmo-server:8080` en compose; `127.0.0.1:8080` si el proxy es local; `10.0.0.10:8080` en LAN privada | upstream privado; nunca publicar este puerto |
 | `-wss-origins` | `https://game.example.com` | allowlist explícita; un `*` aborta el boot |
 | `-map` | `/srv/mmo/maps/arena.heightmap` | mapa (ver §3–§8) |
 
@@ -235,5 +235,6 @@ go test ./internal/e2e/ -run TestWSSThroughTLSProxy
 ```
 
 - `ws://` directo al proxy no existe: el único listener público es el `server` TLS. El upstream tampoco debe aceptar tráfico desde fuera de la red privada.
+- En compose el game server solo declara `expose` interno: no se publica ningún puerto del juego, solo el proxy es público.
 - El upstream responde plano porque confía en el salto del proxy. Publicarlo anula TLS y la allowlist.
 - Rollback: revertir P9 (config/docs/test) no toca P8; el server sigue arrancando con `-wss`.

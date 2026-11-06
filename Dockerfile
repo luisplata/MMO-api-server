@@ -17,13 +17,14 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/mmo-server ./cmd/server
 
-# Runtime: minimal alpine. busybox provides wget/nc used by the
+# Runtime: minimal alpine. busybox provides nc used by the
 # docker-compose healthcheck. The binary is static (CGO_ENABLED=0) and
-# the server speaks plaintext TCP/UDP only, so no libc/certs are needed.
+# serves plain ws:// on the private upstream network; TLS and
+# certificates belong to the reverse proxy, never to this image.
 FROM alpine:3.21
 RUN adduser -D -u 10001 mmo
 COPY --from=builder /out/mmo-server /usr/local/bin/mmo-server
 USER mmo
-EXPOSE 8000/tcp 8001/udp
+EXPOSE 8080/tcp
 ENTRYPOINT ["/usr/local/bin/mmo-server"]
-CMD ["-tcp", ":8000", "-udp", ":8001", "-dev-auth", "true"]
+CMD ["-wss", ":8080", "-dev-auth", "true"]

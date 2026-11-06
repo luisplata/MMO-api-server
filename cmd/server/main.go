@@ -1,7 +1,6 @@
-// Command server is the MMO server entry point (task 4.9, design PR4b):
-// it parses flags and hands control to internal/server, which owns the
-// TCP accept loop, the UDP input loop, the deterministic 20 Hz
-// simulation and graceful shutdown.
+// Command server is the MMO server entry point: it parses flags and hands
+// control to internal/server, which owns the private WSS upstream, the
+// deterministic 20 Hz simulation and graceful shutdown.
 package main
 
 import (
@@ -20,7 +19,7 @@ import (
 )
 
 func main() {
-	wssAddr := flag.String("wss", "127.0.0.1:8080", "private upstream WebSocket listen address (TLS terminates at the reverse proxy; no cert/key flags)")
+	wssAddr := flag.String("wss", ":8080", "private upstream WebSocket listen address, reachable from the proxy (TLS terminates there; no cert/key flags)")
 	wssOrigins := flag.String("wss-origins", "", "comma-separated explicit Origin host patterns allowed to upgrade (never '*')")
 	tickRate := flag.Int("tick", game.TickRate, "simulation tick rate; v1 is fixed at 20 Hz by internal/game")
 	devAuth := flag.Bool("dev-auth", true, "accept any credentials in dev mode (false rejects all — placeholder for real auth)")
