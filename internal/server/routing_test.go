@@ -145,20 +145,20 @@ func TestDuplicateCharacterRejected(t *testing.T) {
 	sess1 := newInWorldSession(t, srv.reg, "alice")
 	sink1 := newTestSink(16)
 	t.Cleanup(func() { _ = sink1.sink.Close() })
-	if err := srv.enterWorldWithSink(ctx, nil, sess1, &mockTransport{}, sink1.sink, "room-a"); err != nil {
+	if err := srv.enterWorldIn(ctx, sess1, sink1.sink, "room-a"); err != nil {
 		t.Fatalf("first enterWorldIn: %v", err)
 	}
 
 	sess2 := newInWorldSession(t, srv.reg, "alice")
 	sink2 := newTestSink(4)
 	t.Cleanup(func() { _ = sink2.sink.Close() })
-	err := srv.enterWorldWithSink(ctx, nil, sess2, &mockTransport{}, sink2.sink, "room-b")
+	err := srv.enterWorldIn(ctx, sess2, sink2.sink, "room-b")
 	if err == nil {
 		t.Fatal("second tab with the same character must be rejected")
 	}
 	// serveConn always tears the failed session down; that must be a no-op
 	// for the room/player owned by the first tab.
-	srv.cleanupConn(ctx, nil, sess2)
+	srv.cleanupConn(ctx, sess2)
 
 	room, ok := srv.roomOfCharacter(testCharID)
 	if !ok || room != "room-a" {

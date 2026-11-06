@@ -1,8 +1,8 @@
 // Package server wires the protocol, session, network and simulation
-// layers into a running MMO server (PR4b wiring, design): a TCP accept
-// loop drives sessions through the handshake, a UDP loop feeds
-// MoveInputs, and a single sim-owner goroutine runs the deterministic
-// 20 Hz tick, registers/removes players and fans out interest events.
+// layers into a running MMO server: the private WSS upstream (TLS
+// terminates at the proxy) drives sessions, a UDP loop still feeds legacy
+// MoveInputs until P13e removes it, and a single sim-owner goroutine runs
+// the 20 Hz tick and fans out interest events.
 //
 // The package lives in internal/server (not cmd/server) so the headless
 // E2E batch can import it; cmd/server/main.go is a thin flag parser.
@@ -30,12 +30,12 @@ import (
 
 // Config carries the server tunables (design PR4b).
 type Config struct {
-	// TCPAddr is the legacy reliable listener; empty disables it.
-	TCPAddr string
-	// UDPAddr is the legacy datagram socket; empty disables it.
+	// UDPAddr is the legacy datagram socket; empty disables it. It stays
+	// configurable until P13e removes the UDP runtime.
 	UDPAddr string
 	// WSSAddr is the private upstream WebSocket listener (TLS terminates
-	// at the proxy); empty disables it.
+	// at the proxy). It is the server's only listen address; empty is a
+	// boot error.
 	WSSAddr string
 	// WSSOrigins is the explicit Origin allowlist; wildcards are rejected.
 	WSSOrigins []string
@@ -76,28 +76,21 @@ type Config struct {
 }
 
 // player ties one authenticated session to its wire resources: the
-// Transport the session drives, the raw TCP conn (closed directly on
-// shutdown), and the bounded outbound Sink (design P2/P3) that owns all
-// outbound delivery — realtime snapshots via the depth-1 slot and the
-// reliable writes (the real WorldSnapshot and the spawn/despawn fanout)
-// via the bounded queue.
+// bounded outbound Sink (design P2/P3) that owns all outbound delivery —
+// realtime snapshots via the depth-1 slot and the reliable writes (the
+// real WorldSnapshot and the spawn/despawn fanout) via the bounded queue.
 type player struct {
 	sess *session.Session
-	tr   network.Transport
-	tcp  net.Conn // nil for WSS players
 	sink network.Sink
-	// ws routes realtime snapshots over the socket instead of waiting
-	// for a UDP peer bind (WSS has no datagram channel).
-	ws bool
 	// roomID is the room that owns this player's character (design:
 	// Routing). It is set when the player enters the world and is the
 	// address used for the scoped leave/despawn.
 	roomID rooms.RoomID
 }
 
-// Server owns the listeners, the session registry and the simulation.
-// The player map is guarded by mu: the UDP loop, the per-conn
-// goroutines and the sim-owner goroutine all touch it.
+// Server owns the WSS listener, the legacy UDP socket, the session
+// registry and the simulation. The player map is guarded by mu: the UDP
+// loop, the per-conn goroutines and the sim-owner goroutine all touch it.
 type Server struct {
 	cfg Config
 	reg *protocol.Registry
@@ -141,8 +134,8 @@ type Server struct {
 // New constructs the server (registry, dev auth, simulation wired to
 // this server as its sink) without opening any sockets. Run opens them.
 func New(cfg Config) (*Server, error) {
-	if cfg.WSSAddr == "" && (cfg.TCPAddr == "" || cfg.UDPAddr == "") {
-		return nil, errors.New("server: legacy TCP and UDP listen addresses are required when wss is disabled")
+	if cfg.WSSAddr == "" {
+		return nil, errors.New("server: wss listen address is required")
 	}
 	if err := validateWSOrigins(cfg.WSSOrigins); err != nil {
 		return nil, err
@@ -183,41 +176,29 @@ func New(cfg Config) (*Server, error) {
 	return srv, nil
 }
 
-// Run starts the listeners and the three loops (sim, UDP, accept) and
+// Run starts the WSS upstream, the legacy UDP loop and the sim loop and
 // blocks until ctx is cancelled (SIGINT/SIGTERM via signal.NotifyContext
-// in main), then shuts down gracefully: listeners close, sessions and
-// conns are torn down, and every goroutine is joined.
+// in main), then shuts down gracefully: the listeners close, sessions and
+// sinks are torn down, and every goroutine is joined.
 func (s *Server) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	s.cancel = cancel
 
-	var legacyClose func()
-	if s.cfg.TCPAddr != "" && s.cfg.UDPAddr != "" {
-		ln, err := net.Listen("tcp", s.cfg.TCPAddr)
-		if err != nil {
-			return fmt.Errorf("server: tcp listen %s: %w", s.cfg.TCPAddr, err)
-		}
+	var udpClose func()
+	if s.cfg.UDPAddr != "" {
 		udpConn, err := net.ListenPacket("udp", s.cfg.UDPAddr)
 		if err != nil {
-			_ = ln.Close()
 			return fmt.Errorf("server: udp listen %s: %w", s.cfg.UDPAddr, err)
 		}
 		s.udp = udpConn
-		legacyClose = func() { _ = ln.Close(); _ = udpConn.Close() }
-		defer legacyClose()
-		s.wg.Add(2)
+		udpClose = func() { _ = udpConn.Close() }
+		defer udpClose()
+		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
 			if err := s.udpLoop(ctx, udpConn); err != nil {
 				log.Printf("server: udp loop failed: %v", err)
-				s.cancel()
-			}
-		}()
-		go func() {
-			defer s.wg.Done()
-			if err := s.acceptLoop(ctx, ln); err != nil {
-				log.Printf("server: accept loop failed: %v", err)
 				s.cancel()
 			}
 		}()
@@ -258,8 +239,8 @@ func (s *Server) Run(ctx context.Context) error {
 	if wsClose != nil {
 		wsClose()
 	}
-	if legacyClose != nil {
-		legacyClose()
+	if udpClose != nil {
+		udpClose()
 	}
 
 	s.mu.Lock()
@@ -268,9 +249,6 @@ func (s *Server) Run(ctx context.Context) error {
 		if p.sink != nil {
 			_ = p.sink.Close()
 		}
-		if p.tcp != nil {
-			_ = p.tcp.Close()
-		}
 	}
 	s.mu.Unlock()
 
@@ -278,50 +256,14 @@ func (s *Server) Run(ctx context.Context) error {
 	return nil
 }
 
-// acceptLoop accepts TCP conns and starts one handleConn goroutine per
-// connection (each registered in the wait group; Add is safe here
-// because the accept loop itself holds a count until it exits).
-func (s *Server) acceptLoop(ctx context.Context, ln net.Listener) error {
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil // listener closed during shutdown
-			}
-			return err
-		}
-		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
-			s.handleConn(ctx, conn)
-		}()
-	}
-}
-
-// handleConn drives one session over its TCP conn. The frame reads go
-// through a length-prefixed FrameSource (design P1): the session never
-// touches the raw net.Conn for reading, so the inbound transport is
-// swappable (TCP today, WSS in a later slice) with identical on-wire
-// bytes.
-func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
-	s.serveConn(ctx, network.NewLenPrefixSource(conn), conn)
-}
-
-// serveConn drives one session over an inbound FrameSource: it reads
-// frames via src.Next(), feeds them to the session, and when the session
-// reaches in-world it registers the player in the simulation and sends
-// the REAL WorldSnapshot. On any read error (io.EOF at a clean
-// boundary, oversize frame, network failure) or session protocol error
-// the connection is cleaned up.
-func (s *Server) serveConn(ctx context.Context, src network.FrameSource, conn net.Conn) {
-	s.serveFrames(ctx, src, conn, &tcpConnTransport{conn: conn}, nil, false)
-}
-
-// serveFrames drives one session over any FrameSource/Transport pair;
-// conn is nil and sink is pre-built for WSS. realtimeIn tells the loop
-// that inbound MoveInputs share the frame stream (WSS) instead of the
-// separate datagram path (legacy UDP).
-func (s *Server) serveFrames(ctx context.Context, src network.FrameSource, conn net.Conn, tr network.Transport, sink network.Sink, realtimeIn bool) {
+// serveConn drives one session over an inbound FrameSource and its
+// outbound Sink: it reads frames via src.Next(), feeds lifecycle frames
+// to the session and routes inbound MoveInputs to the room simulation,
+// then when the session reaches in-world registers the player and sends
+// the REAL WorldSnapshot. On any read error (io.EOF at a clean boundary,
+// oversize frame, network failure) or session protocol error the
+// connection is cleaned up.
+func (s *Server) serveConn(ctx context.Context, src network.FrameSource, tr network.Transport, sink network.Sink) {
 	sess, err := session.NewSession(s.reg, tr, session.Config{
 		MinProtoVer:      s.cfg.MinProtoVer,
 		MaxProtoVer:      s.cfg.MaxProtoVer,
@@ -334,15 +276,12 @@ func (s *Server) serveFrames(ctx context.Context, src network.FrameSource, conn 
 		Spawn:            s.spawn,
 	})
 	if err != nil {
-		if conn != nil {
-			_ = conn.Close()
-		}
 		if sink != nil {
 			_ = sink.Close()
 		}
 		return
 	}
-	defer s.cleanupConn(ctx, conn, sess)
+	defer s.cleanupConn(ctx, sess)
 
 	for {
 		frame, err := src.Next()
@@ -356,18 +295,16 @@ func (s *Server) serveFrames(ctx context.Context, src network.FrameSource, conn 
 		// anything else falls through so the session applies the same
 		// VersionMismatch + close rule as a lifecycle frame
 		// (docs/PROTOCOL.md §9).
-		if realtimeIn {
-			if mi, version, ok := s.decodeMoveInput(frame); ok && s.versionSupported(version) {
-				s.queueMoveInput(sess, mi)
-				continue
-			}
+		if mi, version, ok := s.decodeMoveInput(frame); ok && s.versionSupported(version) {
+			s.queueMoveInput(sess, mi)
+			continue
 		}
 		if err := sess.HandleTCP(frame); err != nil {
 			return // protocol violation — the session already closed itself
 		}
 		cid := sess.ActiveCharacterID()
 		if sess.State() == session.StateInWorld && cid != "" && !s.isRegistered(cid) {
-			if err := s.enterWorldWithSink(ctx, conn, sess, tr, sink, s.roomForSession(sess)); err != nil {
+			if err := s.enterWorld(ctx, sess, sink); err != nil {
 				// Join failed (e.g. duplicate character id): drop the
 				// connection so the client can retry cleanly.
 				log.Printf("server: character %q join failed: %v", cid, err)
@@ -384,10 +321,10 @@ func (s *Server) versionSupported(v uint16) bool {
 }
 
 // cleanupConn tears down a session: the session closes its transport
-// (which closes the conn), the world entity (the selected character id,
+// (which closes the socket), the world entity (the selected character id,
 // design D3) is removed from the simulation (emitting its despawn event)
 // and dropped from the server map.
-func (s *Server) cleanupConn(ctx context.Context, conn net.Conn, sess *session.Session) {
+func (s *Server) cleanupConn(ctx context.Context, sess *session.Session) {
 	cid := sess.ActiveCharacterID()
 	_ = sess.Close()
 	if cid != "" {
@@ -408,14 +345,11 @@ func (s *Server) cleanupConn(ctx context.Context, conn net.Conn, sess *session.S
 			// is addressed to the character's owning room.
 			_ = s.simDo(ctx, p.roomID, -1, func(sim *game.Simulation) error { return sim.RemovePlayer(cid) })
 			// Stop the player's sink writer goroutine (design P2);
-			// idempotent with the conn close below.
+			// idempotent with the session close above.
 			if p.sink != nil {
 				_ = p.sink.Close()
 			}
 		}
-	}
-	if conn != nil {
-		_ = conn.Close()
 	}
 }
 
@@ -436,9 +370,9 @@ func (s *Server) roomForSession(*session.Session) rooms.RoomID {
 }
 
 // enterWorld registers the authenticated player in its room and sends the
-// REAL WorldSnapshot over TCP.
-func (s *Server) enterWorld(ctx context.Context, conn net.Conn, sess *session.Session, tr network.Transport) error {
-	return s.enterWorldIn(ctx, conn, sess, tr, s.roomForSession(sess))
+// REAL WorldSnapshot through the player's sink.
+func (s *Server) enterWorld(ctx context.Context, sess *session.Session, sink network.Sink) error {
+	return s.enterWorldIn(ctx, sess, sink, s.roomForSession(sess))
 }
 
 // enterWorldIn registers the authenticated player in roomID. Ownership is
@@ -450,13 +384,7 @@ func (s *Server) enterWorld(ctx context.Context, conn net.Conn, sess *session.Se
 // WorldSnapshot as the EnterWorld ack (the session layer has no world
 // state); this real one follows and carries the current room state, so the
 // client's first authoritative view is non-empty.
-func (s *Server) enterWorldIn(ctx context.Context, conn net.Conn, sess *session.Session, tr network.Transport, roomID rooms.RoomID) error {
-	return s.enterWorldWithSink(ctx, conn, sess, tr, nil, roomID)
-}
-
-// enterWorldWithSink is enterWorldIn with an optional pre-built sink
-// (WSS supplies it; TCP passes nil and builds one from conn).
-func (s *Server) enterWorldWithSink(ctx context.Context, conn net.Conn, sess *session.Session, tr network.Transport, sink network.Sink, roomID rooms.RoomID) error {
+func (s *Server) enterWorldIn(ctx context.Context, sess *session.Session, sink network.Sink, roomID rooms.RoomID) error {
 	// World entity identity = the selected character id (design D3), not
 	// the account id. The session only reaches in-world via a valid
 	// SelectCharacter, so the active character + its spawn are resolved.
@@ -471,6 +399,9 @@ func (s *Server) enterWorldWithSink(ctx context.Context, conn net.Conn, sess *se
 	spawn := sess.CharacterSpawn()
 	if spawn == nil {
 		return fmt.Errorf("server: no character spawn resolved")
+	}
+	if sink == nil {
+		return fmt.Errorf("server: no outbound sink for character %q", cid)
 	}
 	// Claim character -> room ownership first: the duplicate tab loses
 	// here, before any room is created or any entity registered.
@@ -487,10 +418,7 @@ func (s *Server) enterWorldWithSink(ctx context.Context, conn net.Conn, sess *se
 		s.unbindCharacter(cid)
 		return fmt.Errorf("server: character %q already connected", cid)
 	}
-	if sink == nil {
-		sink = s.newConnSink(conn, sess)
-	}
-	p := &player{sess: sess, tr: tr, tcp: conn, sink: sink, ws: conn == nil, roomID: roomID}
+	p := &player{sess: sess, sink: sink, roomID: roomID}
 	s.players[cid] = p
 	s.mu.Unlock()
 
@@ -510,21 +438,4 @@ func (s *Server) enterWorldWithSink(ctx context.Context, conn net.Conn, sess *se
 	// queue (design P3): a broken client tears down only its own conn,
 	// and the enqueue never blocks the conn goroutine.
 	return p.sink.Reliable(frame)
-}
-
-// newConnSink builds the per-connection outbound Sink (design P2):
-// reliable writes the TCP conn, realtime delivers a datagram to the
-// bound UDP peer (dropping when unbound), close tears down the conn.
-func (s *Server) newConnSink(conn net.Conn, sess *session.Session) network.Sink {
-	return network.NewSink(
-		func(frame []byte) error { return network.WriteFrame(conn, frame) },
-		func(frame []byte) error {
-			peer := sess.UDPPeer()
-			if peer == nil || s.udp == nil {
-				return nil // not bound yet (or legacy UDP disabled) — drop
-			}
-			return network.SendDatagram(s.udp, peer, frame)
-		},
-		func() error { return conn.Close() },
-	)
 }

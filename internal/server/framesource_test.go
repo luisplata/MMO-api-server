@@ -76,7 +76,7 @@ func TestServeConnConsumesFrameSource(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		srv.serveFrames(ctx, src, nil, &mockTransport{}, sink.sink, false)
+		srv.serveConn(ctx, src, &mockTransport{}, sink.sink)
 	}()
 
 	// The REAL WorldSnapshot (non-empty) is delivered asynchronously by

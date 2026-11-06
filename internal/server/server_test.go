@@ -170,7 +170,7 @@ func TestEnterWorldRegistersAndSendsRealSnapshot(t *testing.T) {
 	defer cancel()
 	go srv.runSim(ctx, make(chan time.Time))
 
-	if err := srv.enterWorldWithSink(ctx, nil, sess, &mockTransport{}, sink.sink, DefaultRoom); err != nil {
+	if err := srv.enterWorld(ctx, sess, sink.sink); err != nil {
 		t.Fatalf("enterWorld: %v", err)
 	}
 
