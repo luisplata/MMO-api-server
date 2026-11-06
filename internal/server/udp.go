@@ -12,9 +12,6 @@ import (
 	"net"
 
 	"github.com/luisplata/mmo-api-server/internal/network"
-	"github.com/luisplata/mmo-api-server/internal/protocol"
-	"github.com/luisplata/mmo-api-server/internal/session"
-	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
 // udpLoop reads datagrams and routes them until the conn closes or ctx
@@ -59,36 +56,4 @@ func (s *Server) routeUDP(payload []byte, addr net.Addr) {
 			s.queueMoveInput(sess, mi)
 		}
 	}
-}
-
-// queueMoveInput queues one client MoveInput for the session's active
-// character in the room that owns it. An unknown or unbound character is
-// dropped, never defaulted to the legacy room. It moves with
-// decodeMoveInput when P13 deletes the UDP loop.
-func (s *Server) queueMoveInput(sess *session.Session, mi *mmov1.MoveInput) {
-	cid := sess.ActiveCharacterID()
-	if cid == "" {
-		return
-	}
-	if sim, ok := s.simForCharacter(cid); ok {
-		_ = sim.QueueInput(cid, mi)
-	}
-}
-
-// decodeMoveInput decodes a frame into a MoveInput and its envelope
-// version, or reports false for anything that is not one (garbage, other
-// message types). The caller decides whether the version is acceptable:
-// the WSS path must reject an out-of-range version (docs/PROTOCOL.md §9),
-// while the legacy UDP path keeps its pre-existing behavior.
-func (s *Server) decodeMoveInput(payload []byte) (*mmov1.MoveInput, uint16, bool) {
-	env, err := protocol.DecodeEnvelope(payload)
-	if err != nil {
-		return nil, 0, false
-	}
-	msg, err := s.reg.DecodeMessage(*env)
-	if err != nil {
-		return nil, 0, false
-	}
-	mi, ok := msg.(*mmov1.MoveInput)
-	return mi, env.Version, ok
 }
