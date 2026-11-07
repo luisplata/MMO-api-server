@@ -88,7 +88,7 @@ func (s *Server) serveWS(runCtx context.Context, c *websocket.Conn) {
 		},
 	)
 	defer sink.Close()
-	s.serveFrames(ctx, &wsFrameSource{ctx: ctx, conn: c}, nil, &wsTransport{sink: sink}, sink)
+	s.serveFrames(ctx, &wsFrameSource{ctx: ctx, conn: c}, nil, &wsTransport{sink: sink}, sink, true)
 }
 
 func wsWrite(ctx context.Context, c *websocket.Conn, frame []byte) error {

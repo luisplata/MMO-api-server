@@ -304,12 +304,14 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 // boundary, oversize frame, network failure) or session protocol error
 // the connection is cleaned up.
 func (s *Server) serveConn(ctx context.Context, src network.FrameSource, conn net.Conn) {
-	s.serveFrames(ctx, src, conn, &tcpConnTransport{conn: conn}, nil)
+	s.serveFrames(ctx, src, conn, &tcpConnTransport{conn: conn}, nil, false)
 }
 
 // serveFrames drives one session over any FrameSource/Transport pair;
-// conn is nil and sink is pre-built for WSS.
-func (s *Server) serveFrames(ctx context.Context, src network.FrameSource, conn net.Conn, tr network.Transport, sink network.Sink) {
+// conn is nil and sink is pre-built for WSS. realtimeIn tells the loop
+// that inbound MoveInputs share the frame stream (WSS) instead of the
+// separate datagram path (legacy UDP).
+func (s *Server) serveFrames(ctx context.Context, src network.FrameSource, conn net.Conn, tr network.Transport, sink network.Sink, realtimeIn bool) {
 	sess, err := session.NewSession(s.reg, tr, session.Config{
 		MinProtoVer:      s.cfg.MinProtoVer,
 		MaxProtoVer:      s.cfg.MaxProtoVer,
@@ -336,6 +338,15 @@ func (s *Server) serveFrames(ctx context.Context, src network.FrameSource, conn 
 		frame, err := src.Next()
 		if err != nil {
 			return
+		}
+		// WSS carries lifecycle and realtime on one socket (spec WSS
+		// único): a MoveInput belongs to the room sim, not the lifecycle
+		// state machine, which would reject it as out-of-order.
+		if realtimeIn {
+			if mi, ok := s.decodeMoveInput(frame); ok {
+				s.queueMoveInput(sess, mi)
+				continue
+			}
 		}
 		if err := sess.HandleTCP(frame); err != nil {
 			return // protocol violation — the session already closed itself

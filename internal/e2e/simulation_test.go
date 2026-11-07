@@ -661,115 +661,88 @@ func entityIDs(ents []*mmov1.EntityState) []string {
 	return ids
 }
 
-// TestTwoPlayersSeeEachOtherMoveEndToEnd is THE GATE (spec R20/S20.1):
-// two in-world clients A (alice) and B (bob); A sends a MoveInput over
-// UDP; B must observe A's NEW position and yaw in a Snapshot over UDP
-// within the broadcast cadence. It also proves the pipeline pieces on the
-// way: full lifecycle, real enter-world snapshot, interest fanout over
-// TCP, UDP token binding, and the pre-move state.
+// TestTwoPlayersSeeEachOtherMoveEndToEnd is the P10 GATE over WSS: two
+// sessions on one wss:// endpoint complete the full login/character/world
+// lifecycle, enter the default room, observe each other, exchange
+// MoveInputs as one envelope per WebSocket message, and disconnect
+// cleanly. After A leaves, B receives A's despawn and keeps receiving
+// snapshots; A reconnects with the same character and is seen again.
 func TestTwoPlayersSeeEachOtherMoveEndToEnd(t *testing.T) {
-	tcpAddr, udpAddr, shutdown := startServer(t)
+	wssURL, shutdown := startProxyUpstream(t)
 	t.Cleanup(shutdown)
-
+	front := startTLSProxy(t, wssURL)
 	reg := protocol.NewWorldRegistry()
 
 	// Triangulation (design D5): alice uses the warrior template, bob the
-	// mage template, so the templateId on each entity is provably derived
-	// from the chosen template and not a hardcoded constant.
-	a := newClient(t, reg, tcpAddr, udpAddr, "alice")
-	arA, spawnA, charIDA, wsA := a.enterWorld(t, "alice", "warrior", "hero")
+	// mage template, so each templateId is derived from its own character.
+	a := newWSClient(t, reg, front, proxyWSOrigin, "alice")
+	spawnA, charIDA, wsA := a.enterWorld(t, "alice", "warrior", "hero")
+	b := newWSClient(t, reg, front, proxyWSOrigin, "bob")
+	spawnB, charIDB, wsB := b.enterWorld(t, "bob", "mage", "hero")
 
-	b := newClient(t, reg, tcpAddr, udpAddr, "bob")
-	arB, _, charIDB, wsB := b.enterWorld(t, "bob", "mage", "hero")
-
-	// Design D5: A's real WorldSnapshot entity for her character carries
-	// the character's templateId (the visual-prefab hint for Unity).
-	if e := findEntity(wsA.Entities, charIDA); e == nil {
-		t.Fatalf("alice: real WorldSnapshot lacks %q (her character): %v", charIDA, entityIDs(wsA.Entities))
-	} else if e.TemplateId != "warrior" {
-		t.Errorf("alice: real WorldSnapshot entity %q templateId = %q, want warrior", charIDA, e.TemplateId)
+	// A's snapshot (taken before B existed) carries only A; B's snapshot,
+	// after live entry, carries both with their own templateId.
+	if e := findEntity(wsA.Entities, charIDA); e == nil || e.TemplateId != "warrior" {
+		t.Fatalf("alice: A entity = %v, want template warrior", e)
+	}
+	if e := findEntity(wsB.Entities, charIDA); e == nil || e.TemplateId != "warrior" {
+		t.Fatalf("bob: A entity = %v, want template warrior", e)
+	}
+	if e := findEntity(wsB.Entities, charIDB); e == nil || e.TemplateId != "mage" {
+		t.Fatalf("bob: B entity = %v, want template mage", e)
 	}
 
-	// B's real WorldSnapshot (full state) already contains A's character,
-	// which entered first — B sees A over TCP before A ever moves.
-	if e := findEntity(wsB.Entities, charIDA); e == nil {
-		t.Fatalf("bob: real WorldSnapshot lacks %q (A's character): %v", charIDA, entityIDs(wsB.Entities))
-	} else if e.TemplateId != "warrior" {
-		t.Errorf("bob: real WorldSnapshot entity %q templateId = %q, want warrior", charIDA, e.TemplateId)
-	}
-
-	// Interest fanout over TCP (spec S18.2, design D4): A is notified
-	// that B's character spawned — the flat resolver announces the
-	// newcomer to everyone else. The SpawnEntity state also carries the
-	// templateId (design D5), which for bob is the mage template — proving
-	// the value follows the spawned character, not the observer.
-	spawnB := requireTCP[*mmov1.SpawnEntity](t, a, "SpawnEntity B", func(sp *mmov1.SpawnEntity) bool {
+	// Interest fanout rides the same socket: A is told B spawned.
+	requireWS[*mmov1.SpawnEntity](t, a, "SpawnEntity B", func(sp *mmov1.SpawnEntity) bool {
 		return sp.EntityId == charIDB
 	})
-	if spawnB.State == nil || spawnB.State.TemplateId != "mage" {
-		t.Errorf("alice: SpawnEntity for bob state templateId = %v, want mage", spawnB.State)
-	}
 
-	// Both clients bind their UDP peer with the raw token (spec R13).
-	a.bindUDP(t, arA.UdpToken)
-	b.bindUDP(t, arB.UdpToken)
-
-	// Before A moves: B must receive a Snapshot over UDP showing alice at
-	// the spawn position with yaw 0 — proves the UDP pipeline end-to-end
-	// and pins the pre-move state.
-	first := requireUDP[*mmov1.Snapshot](t, b, "first snapshot")
-	alice0 := findEntity(first.Entities, charIDA)
-	if alice0 == nil {
-		t.Fatalf("bob: first snapshot lacks %q (A's character): %v", charIDA, entityIDs(first.Entities))
-	}
-	// Design D5: the UDP Snapshot EntityState also carries the character's
-	// templateId, so a client that receives only snapshots can still pick
-	// the visual prefab.
-	if alice0.TemplateId != "warrior" {
-		t.Errorf("bob: alice templateId in first snapshot = %q, want warrior", alice0.TemplateId)
-	}
-	if alice0.Pos == nil || alice0.Pos.X != spawnA.X || alice0.Pos.Z != spawnA.Z {
-		t.Errorf("bob: alice before moving = pos %v, want spawn (%v, %v)", alice0.Pos, spawnA.X, spawnA.Z)
-	}
-	if alice0.Pos == nil || alice0.Pos.Y != spawnA.Y {
-		t.Errorf("bob: alice before moving = y %v, want spawn y %v (terrain-derived)", alice0.Pos, spawnA.Y)
-	}
-	if alice0.Yaw != 0 {
-		t.Errorf("bob: alice yaw before moving = %v, want 0", alice0.Yaw)
-	}
-	t.Logf("bob: baseline snapshot seq=%d shows alice at (%v, %v, %v) yaw %v", first.Seq, alice0.Pos.X, alice0.Pos.Y, alice0.Pos.Z, alice0.Yaw)
-
-	// A moves: +X at 5 u/s with yaw 1.5 rad — one MoveInput over UDP
-	// (spec R15). The sim applies it at the next 20 Hz tick and the
-	// velocity persists, so alice's position advances monotonically.
-	a.sendUDP(t, &mmov1.MoveInput{Seq: 1, Dir: &mmov1.Vec2{X: 1, Z: 0}, Speed: moveSpeed, Yaw: moveYaw})
-
-	// THE GATE (spec S20.1): B observes A's NEW position and yaw in a
-	// Snapshot over UDP within the broadcast cadence (bounded 5 s).
-	moved := requireUDP[*mmov1.Snapshot](t, b, "snapshot showing A moved", func(sn *mmov1.Snapshot) bool {
+	// A moves +X; B observes the new position, yaw, and server-derived Y.
+	a.send(t, &mmov1.MoveInput{Seq: 1, Dir: &mmov1.Vec2{X: 1, Z: 0}, Speed: moveSpeed, Yaw: moveYaw})
+	moved := requireWS[*mmov1.Snapshot](t, b, "snapshot showing A moved", func(sn *mmov1.Snapshot) bool {
 		e := findEntity(sn.Entities, charIDA)
 		return e != nil && e.Pos != nil && e.Pos.X > spawnA.X+0.1 && e.Yaw == moveYaw
 	})
-	alice1 := findEntity(moved.Entities, charIDA)
-	if alice1.Pos.X <= spawnA.X {
-		t.Errorf("bob: alice did not advance: pos = %v, spawn X = %v", alice1.Pos, spawnA.X)
+	alice := findEntity(moved.Entities, charIDA)
+	if wantY := fixtureHeightfield(t).HeightAt(alice.Pos.X, alice.Pos.Z); math.Abs(float64(alice.Pos.Y-wantY)) > 1e-3 {
+		t.Errorf("bob: alice Y = %v, want terrain %v at (%v, %v) [hill gate]", alice.Pos.Y, wantY, alice.Pos.X, alice.Pos.Z)
 	}
-	if alice1.Yaw != moveYaw {
-		t.Errorf("bob: alice yaw = %v, want %v", alice1.Yaw, moveYaw)
+
+	// Triangulation, other direction: B moves and A observes it too.
+	b.send(t, &mmov1.MoveInput{Seq: 2, Dir: &mmov1.Vec2{X: 0, Z: 1}, Speed: moveSpeed, Yaw: 0.5})
+	requireWS[*mmov1.Snapshot](t, a, "snapshot showing B moved", func(sn *mmov1.Snapshot) bool {
+		e := findEntity(sn.Entities, charIDB)
+		return e != nil && e.Pos != nil && e.Pos.Z > spawnB.Z+0.1 && e.Yaw == 0.5
+	})
+
+	// Clean disconnect: A closes; B despawns it and keeps its own stream.
+	a.disconnect()
+	requireWS[*mmov1.DespawnEntity](t, b, "despawn of A", func(dp *mmov1.DespawnEntity) bool {
+		return dp.EntityId == charIDA
+	})
+	after := requireWS[*mmov1.Snapshot](t, b, "snapshot after A left", func(sn *mmov1.Snapshot) bool {
+		return findEntity(sn.Entities, charIDA) == nil
+	})
+	if findEntity(after.Entities, charIDB) == nil {
+		t.Fatalf("bob vanished from his own snapshot after alice left: %v", entityIDs(after.Entities))
 	}
-	if moved.Seq <= first.Seq {
-		t.Errorf("bob: snapshot seq not monotonic: first=%d moved=%d", first.Seq, moved.Seq)
+
+	// Clean reconnect: the same account still owns the character, and B
+	// sees it spawn again.
+	a2 := newWSClient(t, reg, front, proxyWSOrigin, "alice-again")
+	a2.connectAndAuth(t, "alice")
+	if cl := a2.listCharacters(t); len(cl.Characters) != 1 || cl.Characters[0].Id != charIDA {
+		t.Fatalf("alice reconnect: CharacterList = %v, want only %q", cl.Characters, charIDA)
 	}
-	// THE HILL GATE (task 2.8, CTH-7): B sees A's Y equal to the terrain
-	// height at A's broadcast position — derived server-side from the
-	// fixture, never client-supplied.
-	heights := fixtureHeightfield(t)
-	wantY := heights.HeightAt(alice1.Pos.X, alice1.Pos.Z)
-	if math.Abs(float64(alice1.Pos.Y-wantY)) > 1e-3 {
-		t.Errorf("bob: alice Y = %v, want terrain %v at (%v, %v) [hill gate]", alice1.Pos.Y, wantY, alice1.Pos.X, alice1.Pos.Z)
+	if sc := a2.selectCharacter(t, charIDA); !sc.Ok {
+		t.Fatalf("alice reconnect: select rejected: %s", sc.ErrorMessage)
 	}
-	t.Logf("GATE PASSED: bob saw alice at (%.2f, %.2f, %.2f) yaw %.2f rad (snapshot seq %d), spawn was (%v, %v, %v)",
-		alice1.Pos.X, alice1.Pos.Y, alice1.Pos.Z, alice1.Yaw, moved.Seq, spawnA.X, spawnA.Y, spawnA.Z)
+	if snap := a2.enterWorldNow(t, charIDA); findEntity(snap.Entities, charIDB) == nil {
+		t.Fatalf("alice reconnect snapshot lacks bob: %v", entityIDs(snap.Entities))
+	}
+	requireWS[*mmov1.SpawnEntity](t, b, "SpawnEntity A again", func(sp *mmov1.SpawnEntity) bool {
+		return sp.EntityId == charIDA
+	})
 }
 
 // TestSelectingPhaseRejections pins the character-management rejections
