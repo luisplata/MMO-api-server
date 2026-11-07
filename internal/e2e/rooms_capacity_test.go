@@ -19,13 +19,15 @@ func TestWSSRoomCapacityRejectsThirdWithoutConsumingSlot(t *testing.T) {
 	front := startTLSProxy(t, wssURL)
 	reg := protocol.NewWorldRegistry()
 
+	// The pair enters through the public allocator, which fills the legacy
+	// default room; the third client then targets that now-known room by ID.
 	a := newWSClient(t, reg, front, proxyWSOrigin, "alice")
-	spawnA, charIDA, jrA, _ := a.enterWorldIn(t, "alice", "warrior", "hero", protocol.JoinRoomByID, "default")
+	spawnA, charIDA, jrA, _ := a.enterWorldIn(t, "alice", "warrior", "hero", protocol.JoinRoomNextAvailable, "")
 	if jrA.GetRoomId() != "default" || jrA.GetCapacity() != 2 || jrA.GetOccupancy() != 1 {
 		t.Fatalf("alice join = %+v, want default occ=1 cap=2", jrA)
 	}
 	b := newWSClient(t, reg, front, proxyWSOrigin, "bob")
-	_, charIDB, jrB, wsB := b.enterWorldIn(t, "bob", "mage", "hero", protocol.JoinRoomByID, "default")
+	_, charIDB, jrB, wsB := b.enterWorldIn(t, "bob", "mage", "hero", protocol.JoinRoomNextAvailable, "")
 	if jrB.GetRoomId() != "default" || jrB.GetCapacity() != 2 || jrB.GetOccupancy() != 2 {
 		t.Fatalf("bob join = %+v, want default occ=2 cap=2", jrB)
 	}
@@ -86,40 +88,44 @@ func TestWSSRoomsIsolateMovementEndToEnd(t *testing.T) {
 	b := newWSClient(t, reg, front, proxyWSOrigin, "bob")
 	_, charIDB, _, _ := b.enterWorldIn(t, "bob", "mage", "hero", protocol.JoinRoomNextAvailable, "")
 
-	// Second room: carol + dave forced into room-iso BY ID.
+	// Second room: with default full, the only public way in is the
+	// NextAvailable create-on-miss path. Carol creates the room; dave reuses
+	// it. No ByID call may mint a room.
 	c := newWSClient(t, reg, front, proxyWSOrigin, "carol")
-	spawnC, charIDC, jrC, wsC := c.enterWorldIn(t, "carol", "warrior", "hero", protocol.JoinRoomByID, "room-iso")
-	if jrC.GetRoomId() != "room-iso" || jrC.GetOccupancy() != 1 {
-		t.Fatalf("carol join = %+v, want room-iso occ=1", jrC)
+	spawnC, charIDC, jrC, wsC := c.enterWorldIn(t, "carol", "warrior", "hero", protocol.JoinRoomNextAvailable, "")
+	secondRoom := jrC.GetRoomId()
+	if secondRoom == "" || secondRoom == "default" || jrC.GetOccupancy() != 1 {
+		t.Fatalf("carol join = %+v, want a new non-default room occ=1", jrC)
 	}
 	if len(wsC.Entities) != 1 || findEntity(wsC.Entities, charIDC) == nil {
 		t.Fatalf("carol snapshot = %v, want only carol", entityIDs(wsC.Entities))
 	}
 	d := newWSClient(t, reg, front, proxyWSOrigin, "dave")
-	_, charIDD, jrD, wsD := d.enterWorldIn(t, "dave", "mage", "hero", protocol.JoinRoomByID, "room-iso")
-	if jrD.GetRoomId() != "room-iso" || jrD.GetOccupancy() != 2 {
-		t.Fatalf("dave join = %+v, want room-iso occ=2", jrD)
+	_, charIDD, jrD, wsD := d.enterWorldIn(t, "dave", "mage", "hero", protocol.JoinRoomNextAvailable, "")
+	if jrD.GetRoomId() != secondRoom || jrD.GetOccupancy() != 2 {
+		t.Fatalf("dave join = %+v, want %s occ=2", jrD, secondRoom)
 	}
 	if len(wsD.Entities) != 2 || findEntity(wsD.Entities, charIDC) == nil || findEntity(wsD.Entities, charIDD) == nil {
-		t.Fatalf("dave snapshot = %v, want the room-iso pair", entityIDs(wsD.Entities))
+		t.Fatalf("dave snapshot = %v, want the second-room pair", entityIDs(wsD.Entities))
 	}
 	requireWS[*mmov1.SpawnEntity](t, c, "SpawnEntity dave", func(sp *mmov1.SpawnEntity) bool {
 		return sp.EntityId == charIDD
 	})
 
-	// Carol moves in room-iso; dave observes it, proving that room's live sim.
+	// Carol moves in the second room; dave observes it, proving that room's
+	// live sim.
 	c.send(t, &mmov1.MoveInput{Seq: 1, Dir: &mmov1.Vec2{X: 1, Z: 0}, Speed: moveSpeed, Yaw: moveYaw})
 	iso := requireWS[*mmov1.Snapshot](t, d, "snapshot showing carol moved", func(sn *mmov1.Snapshot) bool {
 		e := findEntity(sn.Entities, charIDC)
 		return e != nil && e.Pos != nil && e.Pos.X > spawnC.X+0.1
 	})
 	if len(iso.Entities) != 2 || findEntity(iso.Entities, charIDA) != nil || findEntity(iso.Entities, charIDB) != nil {
-		t.Fatalf("room-iso snapshot leaked default-room players: %v", entityIDs(iso.Entities))
+		t.Fatalf("second-room snapshot leaked default-room players: %v", entityIDs(iso.Entities))
 	}
 
 	// Freshness marker in the default room: bob moves and alice's resulting
-	// snapshot (generated after room-iso existed and carol moved) must only
-	// carry the default pair.
+	// snapshot (generated after the second room existed and carol moved) must
+	// only carry the default pair.
 	b.send(t, &mmov1.MoveInput{Seq: 2, Dir: &mmov1.Vec2{X: 0, Z: 1}, Speed: moveSpeed, Yaw: 0.5})
 	fresh := requireWS[*mmov1.Snapshot](t, a, "snapshot showing bob moved", func(sn *mmov1.Snapshot) bool {
 		e := findEntity(sn.Entities, charIDB)
@@ -129,6 +135,6 @@ func TestWSSRoomsIsolateMovementEndToEnd(t *testing.T) {
 		t.Fatalf("default snapshot = %v, want the default pair only", entityIDs(fresh.Entities))
 	}
 	if findEntity(fresh.Entities, charIDC) != nil || findEntity(fresh.Entities, charIDD) != nil {
-		t.Fatalf("default snapshot leaked room-iso players: %v", entityIDs(fresh.Entities))
+		t.Fatalf("default snapshot leaked second-room players: %v", entityIDs(fresh.Entities))
 	}
 }

@@ -180,6 +180,79 @@ func TestCommitUnknownReservation(t *testing.T) {
 	}
 }
 
+// TestReserveKnownRejectsUnknownRoom: the known-room path never creates a
+// room. An unknown ID yields ErrUnknownRoom, leaves RoomIDs untouched and
+// consumes no reservation or member slot.
+func TestReserveKnownRejectsUnknownRoom(t *testing.T) {
+	for _, id := range []RoomID{"ghost", ""} {
+		t.Run(string(id), func(t *testing.T) {
+			m := NewManager()
+			before := m.RoomIDs()
+			if _, err := m.ReserveKnown(id); !errors.Is(err, ErrUnknownRoom) {
+				t.Fatalf("ReserveKnown(%q) = %v, want ErrUnknownRoom", id, err)
+			}
+			if after := m.RoomIDs(); len(after) != len(before) {
+				t.Fatalf("RoomIDs after unknown reserve = %v, want %v", after, before)
+			}
+			if got := m.Reserved(id); got != 0 {
+				t.Fatalf("Reserved(%q) = %d, want 0", id, got)
+			}
+			if got := m.Occupancy(id); got != 0 {
+				t.Fatalf("Occupancy(%q) = %d, want 0", id, got)
+			}
+		})
+	}
+}
+
+// TestReserveKnownJoinsKnownRoom: a room created by the create-on-miss
+// Reserve path is known, so ReserveKnown can take its remaining slot.
+func TestReserveKnownJoinsKnownRoom(t *testing.T) {
+	m := NewManager()
+	seed, err := m.Reserve("room-a")
+	if err != nil {
+		t.Fatalf("seed Reserve: %v", err)
+	}
+	if _, err := m.ReserveKnown("room-a"); err != nil {
+		t.Fatalf("ReserveKnown(known room) = %v, want nil", err)
+	}
+	if got := m.Reserved("room-a"); got != 2 {
+		t.Fatalf("Reserved after known reserve = %d, want 2", got)
+	}
+	m.Release(seed)
+}
+
+// TestReserveKnownFullKnownRoom: a known room with no free slot rejects the
+// known-room path with ErrRoomFull and holds no extra slot.
+func TestReserveKnownFullKnownRoom(t *testing.T) {
+	m := NewManager()
+	seed, _ := m.Reserve("room-a")
+	if _, err := m.ReserveKnown("room-a"); err != nil {
+		t.Fatalf("ReserveKnown(second slot) = %v, want nil", err)
+	}
+	if _, err := m.ReserveKnown("room-a"); !errors.Is(err, ErrRoomFull) {
+		t.Fatalf("ReserveKnown(full) = %v, want ErrRoomFull", err)
+	}
+	if got := m.Reserved("room-a"); got != Capacity {
+		t.Fatalf("Reserved after full known reserve = %d, want %d", got, Capacity)
+	}
+	m.Release(seed)
+}
+
+// TestReserveCreatesRoomOnMiss pins the NextAvailable seam: only Reserve may
+// create a room lazily; ReserveKnown must not.
+func TestReserveCreatesRoomOnMiss(t *testing.T) {
+	m := NewManager()
+	if _, err := m.Reserve("room-new"); err != nil {
+		t.Fatalf("Reserve(unknown) = %v, want nil (create-on-miss)", err)
+	}
+	if got := m.Reserved("room-new"); got != 1 {
+		t.Fatalf("Reserved(new room) = %d, want 1", got)
+	}
+	if len(m.RoomIDs()) != 1 {
+		t.Fatalf("RoomIDs after create-on-miss = %v, want one room", m.RoomIDs())
+	}
+}
+
 // TestRoomsAreIndependent: capacity is per-room, not global.
 func TestRoomsAreIndependent(t *testing.T) {
 	m := NewManager()

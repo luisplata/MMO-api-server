@@ -440,7 +440,7 @@ func (s *Session) handleJoinRoom(req *mmov1.JoinRoom) error {
 		}
 		id = rooms.RoomID(req.RoomId)
 		var err error
-		if res, err = s.cfg.Rooms.Reserve(id); err != nil {
+		if res, err = s.cfg.Rooms.ReserveKnown(id); err != nil {
 			return s.sendTCP(&mmov1.JoinRoomResponse{}, false)
 		}
 	default:

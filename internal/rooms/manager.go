@@ -22,6 +22,9 @@ const DefaultRoom RoomID = "default"
 var (
 	// ErrRoomFull is returned by Reserve when the room has no free slot.
 	ErrRoomFull = errors.New("rooms: room full")
+	// ErrUnknownRoom is returned by ReserveKnown when the room has not been
+	// created. The known-room path never creates a room on a miss.
+	ErrUnknownRoom = errors.New("rooms: unknown room")
 	// ErrUnknownReservation is returned by Commit for a reservation the
 	// manager no longer tracks (never issued or already released).
 	ErrUnknownReservation = errors.New("rooms: unknown reservation")
@@ -82,13 +85,31 @@ func NewManagerWithClock(clock Clock) *Manager {
 
 // Reserve atomically takes one of the room's slots, lazily creating the room
 // on first use. On success it returns a Reservation to Commit or Release.
-// When the room is full it returns ErrRoomFull and consumes no slot.
+// When the room is full it returns ErrRoomFull and consumes no slot. Only the
+// NextAvailable path may create a room this way.
 func (m *Manager) Reserve(roomID RoomID) (Reservation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.reserveLocked(roomID, true)
+}
 
+// ReserveKnown atomically takes one of the room's slots only when the room
+// already exists. An unknown ID returns ErrUnknownRoom, creates no room and
+// consumes no slot. Existence and reservation happen under one mutex, so the
+// ByID path can never resurrect a room that emptied concurrently.
+func (m *Manager) ReserveKnown(roomID RoomID) (Reservation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.reserveLocked(roomID, false)
+}
+
+// reserveLocked is the shared reservation path; the caller must hold mu.
+func (m *Manager) reserveLocked(roomID RoomID, create bool) (Reservation, error) {
 	r := m.rooms[roomID]
 	if r == nil {
+		if !create {
+			return Reservation{}, ErrUnknownRoom
+		}
 		r = &room{}
 		m.rooms[roomID] = r
 	}
