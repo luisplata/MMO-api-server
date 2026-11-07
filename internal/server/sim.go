@@ -92,14 +92,12 @@ func (s *Server) registerAndSnapshot(ctx context.Context, roomID rooms.RoomID, i
 	return frame, err
 }
 
-// fanoutInterest drains the sim's pending spawn/despawn events and hands
-// them to each target's outbound Sink (design D4/P3, spec S18.2). The
-// target set comes from the InterestResolver (v1 flat: everyone else).
 func (s *Server) fanoutInterest() {
-	events := s.sim.TakeInterestEvents()
-	for _, ev := range events {
-		for _, target := range ev.Targets {
-			s.fanoutEvent(ev, target)
+	for _, rs := range s.runner.allRooms() {
+		for _, ev := range rs.sim.TakeInterestEvents() {
+			for _, target := range ev.Targets {
+				s.fanoutEvent(rs, ev, target)
+			}
 		}
 	}
 }
@@ -110,11 +108,11 @@ func (s *Server) fanoutInterest() {
 // without writing. The enqueue is non-blocking: a slow or broken target
 // is bounded by the sink's queue and a failed write closes only that
 // conn — never the sim-owner goroutine.
-func (s *Server) fanoutEvent(ev world.InterestEvent, target string) {
+func (s *Server) fanoutEvent(rs *roomSim, ev world.InterestEvent, target string) {
 	var msg proto.Message
 	switch ev.Kind {
 	case world.SpawnEvent:
-		e, ok := s.sim.Entity(ev.Subject)
+		e, ok := rs.sim.Entity(ev.Subject)
 		if !ok {
 			return // subject no longer exists — nothing to spawn
 		}

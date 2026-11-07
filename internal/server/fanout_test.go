@@ -130,7 +130,7 @@ func TestFanoutInterest(t *testing.T) {
 
 		// A SpawnEvent for a subject with no entity (e.g. a despawned
 		// player) must not dereference nil state.
-		srv.fanoutEvent(world.InterestEvent{
+		srv.fanoutEvent(srv.runner.room(DefaultRoom), world.InterestEvent{
 			Kind:    world.SpawnEvent,
 			Subject: "gone",
 			Targets: []string{"p1"},

@@ -21,6 +21,7 @@ import (
 	"github.com/luisplata/mmo-api-server/internal/game"
 	"github.com/luisplata/mmo-api-server/internal/network"
 	"github.com/luisplata/mmo-api-server/internal/protocol"
+	"github.com/luisplata/mmo-api-server/internal/rooms"
 	"github.com/luisplata/mmo-api-server/internal/session"
 	"github.com/luisplata/mmo-api-server/internal/template"
 	"github.com/luisplata/mmo-api-server/internal/world"
@@ -78,6 +79,8 @@ type player struct {
 	tr   network.Transport
 	tcp  net.Conn
 	sink network.Sink // design P2: bounded outbound queue
+
+	roomID rooms.RoomID
 }
 
 // Server owns the listeners, the session registry and the simulation.
@@ -104,6 +107,8 @@ type Server struct {
 
 	mu      sync.Mutex
 	players map[string]*player
+	// charRooms is the character -> room ownership index, guarded by mu.
+	charRooms map[string]rooms.RoomID
 
 	// runner owns every per-room simulation (sim above is the DefaultRoom
 	// entry) and its room-owner goroutine — one ticker stepping all rooms.
@@ -133,6 +138,7 @@ func New(cfg Config) (*Server, error) {
 		templates:  cfg.Templates,
 		characters: cfg.Characters,
 		players:    make(map[string]*player),
+		charRooms:  make(map[string]rooms.RoomID),
 	}
 	if cfg.Spawn == nil {
 		// Default resolver: every selected character spawns at the
@@ -303,16 +309,20 @@ func (s *Server) cleanupConn(ctx context.Context, conn net.Conn, sess *session.S
 	cid := sess.ActiveCharacterID()
 	_ = sess.Close()
 	if cid != "" {
-		// RemovePlayer is a no-op for entities that never joined and
-		// returns ctx.Err during shutdown — both are benign. The leave is
-		// addressed to the character's room (P6: the default room).
-		_ = s.simDo(ctx, DefaultRoom, -1, func(sim *game.Simulation) error { return sim.RemovePlayer(cid) })
+		// A rejected duplicate tab must not evict the first tab.
 		s.mu.Lock()
 		p := s.players[cid]
-		delete(s.players, cid)
+		owned := p != nil && p.sess == sess
+		if owned {
+			delete(s.players, cid)
+			delete(s.charRooms, cid)
+		}
 		s.mu.Unlock()
-		if p != nil && p.sink != nil {
-			_ = p.sink.Close()
+		if owned {
+			_ = s.simDo(ctx, p.roomID, -1, func(sim *game.Simulation) error { return sim.RemovePlayer(cid) })
+			if p.sink != nil {
+				_ = p.sink.Close()
+			}
 		}
 	}
 	_ = conn.Close()
@@ -326,14 +336,23 @@ func (s *Server) isRegistered(pid string) bool {
 	return ok
 }
 
-// enterWorld registers the authenticated player in the simulation at
-// their spawn position and sends the REAL WorldSnapshot over TCP.
+func (s *Server) roomForSession(*session.Session) rooms.RoomID {
+	return DefaultRoom
+}
+
+// enterWorld registers the authenticated player in its room and sends the
+// REAL WorldSnapshot over TCP.
+func (s *Server) enterWorld(ctx context.Context, conn net.Conn, sess *session.Session, tr network.Transport) error {
+	return s.enterWorldIn(ctx, conn, sess, tr, s.roomForSession(sess))
+}
+
+// enterWorldIn claims cid -> roomID atomically before registering anything.
 //
 // v1 behavior: the session's handshake already delivered an EMPTY
 // WorldSnapshot as the EnterWorld ack (the session layer has no world
-// state); this real one follows and carries the current world state, so
-// the client's first authoritative view is non-empty.
-func (s *Server) enterWorld(ctx context.Context, conn net.Conn, sess *session.Session, tr network.Transport) error {
+// state); this real one follows and carries the current room state, so the
+// client's first authoritative view is non-empty.
+func (s *Server) enterWorldIn(ctx context.Context, conn net.Conn, sess *session.Session, tr network.Transport, roomID rooms.RoomID) error {
 	// World entity identity = the selected character id (design D3), not
 	// the account id. The session only reaches in-world via a valid
 	// SelectCharacter, so the active character + its spawn are resolved.
@@ -349,26 +368,33 @@ func (s *Server) enterWorld(ctx context.Context, conn net.Conn, sess *session.Se
 	if spawn == nil {
 		return fmt.Errorf("server: no character spawn resolved")
 	}
+	if err := s.bindCharacter(cid, roomID); err != nil {
+		return err
+	}
+	if _, err := s.runner.ensureRoom(roomID); err != nil {
+		s.unbindCharacter(cid)
+		return err
+	}
 	s.mu.Lock()
 	if _, dup := s.players[cid]; dup {
 		s.mu.Unlock()
+		s.unbindCharacter(cid)
 		return fmt.Errorf("server: character %q already connected", cid)
 	}
-	p := &player{sess: sess, tr: tr, tcp: conn, sink: s.newConnSink(conn, sess)}
+	p := &player{sess: sess, tr: tr, tcp: conn, sink: s.newConnSink(conn, sess), roomID: roomID}
 	s.players[cid] = p
 	s.mu.Unlock()
 
 	// Design D4/D5: the entity registers at the character spawn with the
 	// character's template id + frozen stats snapshot. The sim re-resolves
 	// the terrain height authoritatively.
-	frame, err := s.registerAndSnapshot(ctx, DefaultRoom, cid, spawnFromProto(spawn), char.TemplateID, char.Stats, sess.WireVersion())
+	frame, err := s.registerAndSnapshot(ctx, roomID, cid, spawnFromProto(spawn), char.TemplateID, char.Stats, sess.WireVersion())
 	if err != nil {
 		s.mu.Lock()
 		delete(s.players, cid)
 		s.mu.Unlock()
-		if p.sink != nil {
-			_ = p.sink.Close() // release the sink built above (design P3)
-		}
+		s.unbindCharacter(cid)
+		_ = p.sink.Close() // release the sink built above (design P3)
 		return err
 	}
 	// Route the REAL WorldSnapshot through the bounded sink's reliable

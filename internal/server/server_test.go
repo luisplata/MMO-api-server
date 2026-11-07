@@ -19,6 +19,7 @@ import (
 	"github.com/luisplata/mmo-api-server/internal/game"
 	"github.com/luisplata/mmo-api-server/internal/network"
 	"github.com/luisplata/mmo-api-server/internal/protocol"
+	"github.com/luisplata/mmo-api-server/internal/rooms"
 	"github.com/luisplata/mmo-api-server/internal/session"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
@@ -92,10 +93,11 @@ func clientFrame(t *testing.T, reg *protocol.Registry, msg proto.Message, flags 
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	srv := &Server{
-		reg:     protocol.NewWorldRegistry(),
-		auth:    devAuthenticator{enabled: true},
-		udp:     &fakePacketConn{},
-		players: make(map[string]*player),
+		reg:       protocol.NewWorldRegistry(),
+		auth:      devAuthenticator{enabled: true},
+		udp:       &fakePacketConn{},
+		players:   make(map[string]*player),
+		charRooms: make(map[string]rooms.RoomID),
 	}
 	sim, err := game.NewSimulation(game.SimulationConfig{Sink: srv})
 	if err != nil {
@@ -147,6 +149,9 @@ func newInWorldSession(t *testing.T, reg *protocol.Registry, username string) *s
 // does) with a mock transport and no TCP conn.
 func addTestPlayer(t *testing.T, srv *Server, id string, sess *session.Session) {
 	t.Helper()
+	if err := srv.bindCharacter(id, DefaultRoom); err != nil {
+		t.Fatalf("bindCharacter(%s): %v", id, err)
+	}
 	sink := network.NewSink(
 		func([]byte) error { return nil },
 		func(frame []byte) error {
