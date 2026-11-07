@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,8 +20,8 @@ import (
 )
 
 func main() {
-	tcpAddr := flag.String("tcp", ":8000", "TCP listen address (handshake, auth, spawn/despawn, reliable commands)")
-	udpAddr := flag.String("udp", ":8001", "UDP listen address (MoveInput client->server, snapshots server->client)")
+	wssAddr := flag.String("wss", "127.0.0.1:8080", "private upstream WebSocket listen address (TLS terminates at the reverse proxy; no cert/key flags)")
+	wssOrigins := flag.String("wss-origins", "", "comma-separated explicit Origin host patterns allowed to upgrade (never '*')")
 	tickRate := flag.Int("tick", game.TickRate, "simulation tick rate; v1 is fixed at 20 Hz by internal/game")
 	devAuth := flag.Bool("dev-auth", true, "accept any credentials in dev mode (false rejects all — placeholder for real auth)")
 	spawnX := flag.Float64("spawn-x", 0, "default spawn position X (issued by dev auth)")
@@ -40,8 +41,8 @@ func main() {
 	log.Printf("server: map active: %s", mapIdentity(*mapFile))
 
 	srv, err := server.New(server.Config{
-		TCPAddr:          *tcpAddr,
-		UDPAddr:          *udpAddr,
+		WSSAddr:          *wssAddr,
+		WSSOrigins:       splitOrigins(*wssOrigins),
 		TickRate:         int32(*tickRate),
 		DevAuth:          *devAuth,
 		SpawnX:           float32(*spawnX),
@@ -62,6 +63,19 @@ func main() {
 		os.Exit(1)
 	}
 	log.Printf("server exited cleanly")
+}
+
+// splitOrigins parses the -wss-origins comma-separated allowlist,
+// trimming whitespace and dropping empty entries. Wildcards are kept so
+// server.New can reject them at boot.
+func splitOrigins(raw string) []string {
+	var origins []string
+	for _, part := range strings.Split(raw, ",") {
+		if origin := strings.TrimSpace(part); origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
 }
 
 // loadMap resolves the boot heightfield (design D7, task 2.6): a

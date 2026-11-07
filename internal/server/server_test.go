@@ -186,11 +186,11 @@ func TestNewServerValidation(t *testing.T) {
 		name string
 		mut  func(*Config)
 	}{
-		{"empty tcp addr", func(c *Config) { c.TCPAddr = "" }},
-		{"empty udp addr", func(c *Config) { c.UDPAddr = "" }},
+		{"no listen address", func(c *Config) { c.TCPAddr = ""; c.UDPAddr = ""; c.WSSAddr = "" }},
 		{"non-20 tick rate", func(c *Config) { c.TickRate = 10 }},
 		{"inverted version range", func(c *Config) { c.MinProtoVer = 5; c.MaxProtoVer = 1 }},
 		{"zero version range", func(c *Config) { c.MinProtoVer = 0; c.MaxProtoVer = 0 }},
+		{"wildcard websocket origin", func(c *Config) { c.WSSOrigins = []string{"*"} }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

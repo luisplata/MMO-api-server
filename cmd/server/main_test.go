@@ -9,6 +9,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 )
@@ -24,6 +25,28 @@ func fixturePath(t *testing.T) string {
 	}
 	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 	return filepath.Join(root, "internal", "world", "testdata", "hills.heightmap")
+}
+
+// TestSplitOrigins pins the -wss-origins parsing: the flag is a
+// comma-separated explicit host allowlist, trimmed, with empty entries
+// dropped. Wildcards are preserved here so server.New can fail boot.
+func TestSplitOrigins(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want []string
+	}{
+		{"", nil},
+		{"allowed.example", []string{"allowed.example"}},
+		{" allowed.example , https://game.example:443 ", []string{"allowed.example", "https://game.example:443"}},
+		{"*,", []string{"*"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.raw, func(t *testing.T) {
+			if got := splitOrigins(tc.raw); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("splitOrigins(%q) = %v, want %v", tc.raw, got, tc.want)
+			}
+		})
+	}
 }
 
 // TestLoadMapDefaultSelectsEmbeddedFixture pins WTM-4 default: with no

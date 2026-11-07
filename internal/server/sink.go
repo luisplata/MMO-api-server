@@ -21,14 +21,15 @@ func (s *Server) SendSnapshot(playerID string, snap *mmov1.Snapshot) error {
 		return nil
 	}
 	sess := p.sess
-	if !sess.UDPBound() || sess.UDPPeer() == nil {
+	if !p.ws && (!sess.UDPBound() || sess.UDPPeer() == nil) {
 		return nil
 	}
 	frame, err := s.reg.EncodeMessage(snap, protocol.Envelope{Version: sess.WireVersion()})
 	if err != nil {
 		return err
 	}
-	// Non-blocking enqueue: the sink coalesces snapshots (last-wins).
+	// Non-blocking enqueue: the sink coalesces snapshots (last-wins) and
+	// its writer goroutine performs the datagram write.
 	p.sink.Realtime(frame)
 	return nil
 }
