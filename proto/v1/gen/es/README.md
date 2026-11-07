@@ -5,10 +5,11 @@
 
 **Incomplete on purpose:** P19a staged the latency/room-lobby messages
 (type ids 19-22); P19b adds the foundation/session messages needed for
-the WSS handshake, authentication and character selection. P19c-P19d add
-the simulation and character messages, then remove the temporary `types`
-filter. Until P19d lands, this is an intermediate client contract, not
-the full public surface.
+the WSS handshake, authentication and character selection; P19c adds the
+simulation/world-state messages (entity state, snapshots, movement and
+spawn/despawn). P19d adds the character messages and removes the
+temporary `types` filter. Until P19d lands, this is an intermediate
+client contract, not the full public surface.
 
 Regenerate from the repository root:
 

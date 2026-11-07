@@ -5,8 +5,10 @@
 #   npm ci && make proto-es
 #
 # P19b adds the foundation/session surface needed for the WSS handshake,
-# authentication and character selection. The temporary `types` filter is
-# removed in P19d, when this file becomes the complete world contract.
+# authentication and character selection; P19c adds the simulation/world-state
+# surface (entity state, snapshots, movement and spawn/despawn). The temporary
+# `types` filter is removed in P19d, when this file becomes the complete world
+# contract.
 version: v2
 plugins:
   - local: protoc-gen-es
@@ -21,6 +23,13 @@ plugins:
       - mmo.v1.AuthRequest
       - mmo.v1.AuthResponse
       - mmo.v1.EnterWorld
+      - mmo.v1.EntityState
+      - mmo.v1.WorldSnapshot
+      - mmo.v1.MoveInput
+      - mmo.v1.Snapshot
+      - mmo.v1.Ack
+      - mmo.v1.SpawnEntity
+      - mmo.v1.DespawnEntity
       - mmo.v1.Ping
       - mmo.v1.Pong
       - mmo.v1.JoinRoom

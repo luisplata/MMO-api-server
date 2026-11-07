@@ -62,7 +62,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file v1/world.proto.
  */
 export const file_v1_world: GenFile = /*@__PURE__*/
-  fileDesc("Cg52MS93b3JsZC5wcm90bxIGbW1vLnYxIhwKBFZlYzISCQoBeBgBIAEoAhIJCgF6GAIgASgCIicKBFZlYzMSCQoBeBgBIAEoAhIJCgF5GAIgASgCEgkKAXoYAyABKAIiGQoFSGVsbG8SEAoIcHJvdG9WZXIYASABKAUiRAoKU2VydmVySW5mbxIQCghwcm90b1ZlchgBIAEoBRIQCgh0aWNrUmF0ZRgCIAEoBRISCgpzZXJ2ZXJUaW1lGAMgASgDIjEKD1ZlcnNpb25NaXNtYXRjaBIOCgZtaW5WZXIYASABKAUSDgoGbWF4VmVyGAIgASgFIjEKC0F1dGhSZXF1ZXN0EhAKCHVzZXJuYW1lGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJInQKDEF1dGhSZXNwb25zZRIKCgJvaxgBIAEoCBIQCghwbGF5ZXJJZBgCIAEoCRIeCghzcGF3blBvcxgDIAEoCzIMLm1tby52MS5WZWMzEhAKCHVkcFRva2VuGAQgASgMEhQKDGVycm9yTWVzc2FnZRgFIAEoCSIMCgpFbnRlcldvcmxkIikKBFBpbmcSDQoFbm9uY2UYASABKAQSEgoKY2xpZW50VGltZRgCIAEoAyIpCgRQb25nEg0KBW5vbmNlGAEgASgEEhIKCmNsaWVudFRpbWUYAiABKAMiKAoISm9pblJvb20SDAoEbW9kZRgBIAEoBRIOCgZyb29tSWQYAiABKAkiRwoQSm9pblJvb21SZXNwb25zZRIOCgZyb29tSWQYASABKAkSEAoIY2FwYWNpdHkYAiABKAUSEQoJb2NjdXBhbmN5GAMgASgFQkdaPGdpdGh1Yi5jb20vbHVpc3BsYXRhL21tby1hcGktc2VydmVyL3Byb3RvL3YxL2dlbi9nby92MTttbW92MaoCBk1tby5WMWIGcHJvdG8z");
+  fileDesc("Cg52MS93b3JsZC5wcm90bxIGbW1vLnYxIhwKBFZlYzISCQoBeBgBIAEoAhIJCgF6GAIgASgCIicKBFZlYzMSCQoBeBgBIAEoAhIJCgF5GAIgASgCEgkKAXoYAyABKAIidQoLRW50aXR5U3RhdGUSCgoCaWQYASABKAkSGQoDcG9zGAIgASgLMgwubW1vLnYxLlZlYzMSHgoIdmVsb2NpdHkYAyABKAsyDC5tbW8udjEuVmVjMhILCgN5YXcYBCABKAISEgoKdGVtcGxhdGVJZBgFIAEoCSIZCgVIZWxsbxIQCghwcm90b1ZlchgBIAEoBSJECgpTZXJ2ZXJJbmZvEhAKCHByb3RvVmVyGAEgASgFEhAKCHRpY2tSYXRlGAIgASgFEhIKCnNlcnZlclRpbWUYAyABKAMiMQoPVmVyc2lvbk1pc21hdGNoEg4KBm1pblZlchgBIAEoBRIOCgZtYXhWZXIYAiABKAUiMQoLQXV0aFJlcXVlc3QSEAoIdXNlcm5hbWUYASABKAkSEAoIcGFzc3dvcmQYAiABKAkidAoMQXV0aFJlc3BvbnNlEgoKAm9rGAEgASgIEhAKCHBsYXllcklkGAIgASgJEh4KCHNwYXduUG9zGAMgASgLMgwubW1vLnYxLlZlYzMSEAoIdWRwVG9rZW4YBCABKAwSFAoMZXJyb3JNZXNzYWdlGAUgASgJIgwKCkVudGVyV29ybGQiNgoNV29ybGRTbmFwc2hvdBIlCghlbnRpdGllcxgBIAMoCzITLm1tby52MS5FbnRpdHlTdGF0ZSJPCglNb3ZlSW5wdXQSCwoDc2VxGAEgASgFEhkKA2RpchgCIAEoCzIMLm1tby52MS5WZWMyEg0KBXNwZWVkGAMgASgCEgsKA3lhdxgEIAEoAiI+CghTbmFwc2hvdBILCgNzZXEYASABKAUSJQoIZW50aXRpZXMYAiADKAsyEy5tbW8udjEuRW50aXR5U3RhdGUiEgoDQWNrEgsKA3NlcRgBIAEoDSJDCgtTcGF3bkVudGl0eRIQCghlbnRpdHlJZBgBIAEoCRIiCgVzdGF0ZRgCIAEoCzITLm1tby52MS5FbnRpdHlTdGF0ZSIhCg1EZXNwYXduRW50aXR5EhAKCGVudGl0eUlkGAEgASgJIikKBFBpbmcSDQoFbm9uY2UYASABKAQSEgoKY2xpZW50VGltZRgCIAEoAyIpCgRQb25nEg0KBW5vbmNlGAEgASgEEhIKCmNsaWVudFRpbWUYAiABKAMiKAoISm9pblJvb20SDAoEbW9kZRgBIAEoBRIOCgZyb29tSWQYAiABKAkiRwoQSm9pblJvb21SZXNwb25zZRIOCgZyb29tSWQYASABKAkSEAoIY2FwYWNpdHkYAiABKAUSEQoJb2NjdXBhbmN5GAMgASgFQkdaPGdpdGh1Yi5jb20vbHVpc3BsYXRhL21tby1hcGktc2VydmVyL3Byb3RvL3YxL2dlbi9nby92MTttbW92MaoCBk1tby5WMWIGcHJvdG8z");
 
 /**
  * Vec2 is a 2D vector on the ground plane (x, z). Used for velocity and
@@ -121,6 +121,51 @@ export const Vec3Schema: GenMessage<Vec3> = /*@__PURE__*/
   messageDesc(file_v1_world, 1);
 
 /**
+ * EntityState is the server-authoritative state of one entity. pos is a
+ * Vec3 carrying the derived terrain height in pos.y; velocity is the
+ * Vec2 ground-plane velocity; yaw is in radians (v2 sends raw radians;
+ * future delta-encoding must handle wrap-around at 0/2π). No pitch/roll
+ * fields exist by design. templateId (field 5) is additive and carries
+ * the character-template hint so the client can pick the visual model;
+ * it is empty for non-character entities.
+ *
+ * @generated from message mmo.v1.EntityState
+ */
+export type EntityState = Message<"mmo.v1.EntityState"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: mmo.v1.Vec3 pos = 2;
+   */
+  pos?: Vec3 | undefined;
+
+  /**
+   * @generated from field: mmo.v1.Vec2 velocity = 3;
+   */
+  velocity?: Vec2 | undefined;
+
+  /**
+   * @generated from field: float yaw = 4;
+   */
+  yaw: number;
+
+  /**
+   * @generated from field: string templateId = 5;
+   */
+  templateId: string;
+};
+
+/**
+ * Describes the message mmo.v1.EntityState.
+ * Use `create(EntityStateSchema)` to create a new message.
+ */
+export const EntityStateSchema: GenMessage<EntityState> = /*@__PURE__*/
+  messageDesc(file_v1_world, 2);
+
+/**
  * Hello opens a TCP session and announces the client's protocol major
  * version for negotiation.
  *
@@ -138,7 +183,7 @@ export type Hello = Message<"mmo.v1.Hello"> & {
  * Use `create(HelloSchema)` to create a new message.
  */
 export const HelloSchema: GenMessage<Hello> = /*@__PURE__*/
-  messageDesc(file_v1_world, 2);
+  messageDesc(file_v1_world, 3);
 
 /**
  * ServerInfo answers Hello with the negotiated parameters: the
@@ -169,7 +214,7 @@ export type ServerInfo = Message<"mmo.v1.ServerInfo"> & {
  * Use `create(ServerInfoSchema)` to create a new message.
  */
 export const ServerInfoSchema: GenMessage<ServerInfo> = /*@__PURE__*/
-  messageDesc(file_v1_world, 3);
+  messageDesc(file_v1_world, 4);
 
 /**
  * VersionMismatch is sent when the client version is outside the
@@ -194,7 +239,7 @@ export type VersionMismatch = Message<"mmo.v1.VersionMismatch"> & {
  * Use `create(VersionMismatchSchema)` to create a new message.
  */
 export const VersionMismatchSchema: GenMessage<VersionMismatch> = /*@__PURE__*/
-  messageDesc(file_v1_world, 4);
+  messageDesc(file_v1_world, 5);
 
 /**
  * AuthRequest carries the client's credentials.
@@ -218,7 +263,7 @@ export type AuthRequest = Message<"mmo.v1.AuthRequest"> & {
  * Use `create(AuthRequestSchema)` to create a new message.
  */
 export const AuthRequestSchema: GenMessage<AuthRequest> = /*@__PURE__*/
-  messageDesc(file_v1_world, 5);
+  messageDesc(file_v1_world, 6);
 
 /**
  * AuthResponse answers AuthRequest. On success ok=true and the server
@@ -261,7 +306,7 @@ export type AuthResponse = Message<"mmo.v1.AuthResponse"> & {
  * Use `create(AuthResponseSchema)` to create a new message.
  */
 export const AuthResponseSchema: GenMessage<AuthResponse> = /*@__PURE__*/
-  messageDesc(file_v1_world, 6);
+  messageDesc(file_v1_world, 7);
 
 /**
  * EnterWorld acknowledges readiness for the initial world state.
@@ -276,7 +321,159 @@ export type EnterWorld = Message<"mmo.v1.EnterWorld"> & {
  * Use `create(EnterWorldSchema)` to create a new message.
  */
 export const EnterWorldSchema: GenMessage<EnterWorld> = /*@__PURE__*/
-  messageDesc(file_v1_world, 7);
+  messageDesc(file_v1_world, 8);
+
+/**
+ * WorldSnapshot is the full initial state sent in reply to EnterWorld.
+ *
+ * @generated from message mmo.v1.WorldSnapshot
+ */
+export type WorldSnapshot = Message<"mmo.v1.WorldSnapshot"> & {
+  /**
+   * @generated from field: repeated mmo.v1.EntityState entities = 1;
+   */
+  entities: EntityState[];
+};
+
+/**
+ * Describes the message mmo.v1.WorldSnapshot.
+ * Use `create(WorldSnapshotSchema)` to create a new message.
+ */
+export const WorldSnapshotSchema: GenMessage<WorldSnapshot> = /*@__PURE__*/
+  messageDesc(file_v1_world, 9);
+
+/**
+ * MoveInput is client->server over UDP. seq is the client's own
+ * sequence number; the server tags processing to the simulation tick.
+ * dir/speed/yaw are intent — the server validates speed and integrates
+ * authoritatively (no collision in v1).
+ *
+ * @generated from message mmo.v1.MoveInput
+ */
+export type MoveInput = Message<"mmo.v1.MoveInput"> & {
+  /**
+   * @generated from field: int32 seq = 1;
+   */
+  seq: number;
+
+  /**
+   * @generated from field: mmo.v1.Vec2 dir = 2;
+   */
+  dir?: Vec2 | undefined;
+
+  /**
+   * @generated from field: float speed = 3;
+   */
+  speed: number;
+
+  /**
+   * @generated from field: float yaw = 4;
+   */
+  yaw: number;
+};
+
+/**
+ * Describes the message mmo.v1.MoveInput.
+ * Use `create(MoveInputSchema)` to create a new message.
+ */
+export const MoveInputSchema: GenMessage<MoveInput> = /*@__PURE__*/
+  messageDesc(file_v1_world, 10);
+
+/**
+ * Snapshot is the server->client broadcast container (10 Hz over UDP).
+ * seq is the server's monotonic snapshot sequence; clients drop any
+ * snapshot with seq <= the last applied. This container is designed so
+ * future chunks, delta compression and client prediction never change
+ * this message — only server internals evolve.
+ *
+ * @generated from message mmo.v1.Snapshot
+ */
+export type Snapshot = Message<"mmo.v1.Snapshot"> & {
+  /**
+   * @generated from field: int32 seq = 1;
+   */
+  seq: number;
+
+  /**
+   * @generated from field: repeated mmo.v1.EntityState entities = 2;
+   */
+  entities: EntityState[];
+};
+
+/**
+ * Describes the message mmo.v1.Snapshot.
+ * Use `create(SnapshotSchema)` to create a new message.
+ */
+export const SnapshotSchema: GenMessage<Snapshot> = /*@__PURE__*/
+  messageDesc(file_v1_world, 11);
+
+/**
+ * Ack acknowledges a received seq (v1: no retransmission — inputs are
+ * idempotent and cheap).
+ *
+ * @generated from message mmo.v1.Ack
+ */
+export type Ack = Message<"mmo.v1.Ack"> & {
+  /**
+   * @generated from field: uint32 seq = 1;
+   */
+  seq: number;
+};
+
+/**
+ * Describes the message mmo.v1.Ack.
+ * Use `create(AckSchema)` to create a new message.
+ */
+export const AckSchema: GenMessage<Ack> = /*@__PURE__*/
+  messageDesc(file_v1_world, 12);
+
+/**
+ * SpawnEntity is sent over TCP when an entity enters a player's interest
+ * set (v1 flat fanout: on join; chunk fanout: on cell enter). It carries
+ * the entity id and its full authoritative state so the client can add
+ * the entity without waiting for the next snapshot.
+ *
+ * @generated from message mmo.v1.SpawnEntity
+ */
+export type SpawnEntity = Message<"mmo.v1.SpawnEntity"> & {
+  /**
+   * @generated from field: string entityId = 1;
+   */
+  entityId: string;
+
+  /**
+   * @generated from field: mmo.v1.EntityState state = 2;
+   */
+  state?: EntityState | undefined;
+};
+
+/**
+ * Describes the message mmo.v1.SpawnEntity.
+ * Use `create(SpawnEntitySchema)` to create a new message.
+ */
+export const SpawnEntitySchema: GenMessage<SpawnEntity> = /*@__PURE__*/
+  messageDesc(file_v1_world, 13);
+
+/**
+ * DespawnEntity is sent over TCP when an entity leaves a player's
+ * interest set (v1 flat fanout: on leave; chunk fanout: on cell leave).
+ * It carries only the entity id — the client removes the entity.
+ *
+ * @generated from message mmo.v1.DespawnEntity
+ */
+export type DespawnEntity = Message<"mmo.v1.DespawnEntity"> & {
+  /**
+   * @generated from field: string entityId = 1;
+   */
+  entityId: string;
+};
+
+/**
+ * Describes the message mmo.v1.DespawnEntity.
+ * Use `create(DespawnEntitySchema)` to create a new message.
+ */
+export const DespawnEntitySchema: GenMessage<DespawnEntity> = /*@__PURE__*/
+  messageDesc(file_v1_world, 14);
 
 /**
  * ─── Latency probe (additive, type ids 19-20) ───────────────────────
@@ -304,7 +501,7 @@ export type Ping = Message<"mmo.v1.Ping"> & {
  * Use `create(PingSchema)` to create a new message.
  */
 export const PingSchema: GenMessage<Ping> = /*@__PURE__*/
-  messageDesc(file_v1_world, 8);
+  messageDesc(file_v1_world, 15);
 
 /**
  * Pong echoes the Ping fields immediately, outside the 20 Hz tick.
@@ -328,7 +525,7 @@ export type Pong = Message<"mmo.v1.Pong"> & {
  * Use `create(PongSchema)` to create a new message.
  */
 export const PongSchema: GenMessage<Pong> = /*@__PURE__*/
-  messageDesc(file_v1_world, 9);
+  messageDesc(file_v1_world, 16);
 
 /**
  * ─── Room lobby (additive, type ids 21-22) ──────────────────────────
@@ -353,7 +550,7 @@ export type JoinRoom = Message<"mmo.v1.JoinRoom"> & {
  * Use `create(JoinRoomSchema)` to create a new message.
  */
 export const JoinRoomSchema: GenMessage<JoinRoom> = /*@__PURE__*/
-  messageDesc(file_v1_world, 10);
+  messageDesc(file_v1_world, 17);
 
 /**
  * JoinRoomResponse: zero capacity/roomId means nothing was reserved.
@@ -382,5 +579,5 @@ export type JoinRoomResponse = Message<"mmo.v1.JoinRoomResponse"> & {
  * Use `create(JoinRoomResponseSchema)` to create a new message.
  */
 export const JoinRoomResponseSchema: GenMessage<JoinRoomResponse> = /*@__PURE__*/
-  messageDesc(file_v1_world, 11);
+  messageDesc(file_v1_world, 18);
 

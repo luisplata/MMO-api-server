@@ -136,12 +136,12 @@ func TestNoGobInServerMessagePaths(t *testing.T) {
 	}
 }
 
-// TestGeneratedTypeScriptFoundationContract pins the committed ES bindings
-// for the P19b handshake/auth/character-selection surface: the protoc-gen-es
-// v2 preamble and runtime import are fixed, the foundation/session messages
-// are exported as both a type and a schema, and the deferred private-room
-// symbols stay absent. The scan needs no Node toolchain.
-func TestGeneratedTypeScriptFoundationContract(t *testing.T) {
+// TestGeneratedTypeScriptContract pins the committed ES bindings for the
+// staged web-client surface: the protoc-gen-es v2 preamble and runtime import
+// are fixed, the foundation/session (P19b) and simulation/world-state (P19c)
+// messages are exported as both a type and a schema, and the deferred
+// private-room symbols stay absent. The scan needs no Node toolchain.
+func TestGeneratedTypeScriptContract(t *testing.T) {
 	root := repoRoot(t)
 	path := filepath.Join(root, "proto", "v1", "gen", "es", "v1", "world_pb.ts")
 	data, err := os.ReadFile(path)
@@ -168,6 +168,8 @@ func TestGeneratedTypeScriptFoundationContract(t *testing.T) {
 	required := []string{
 		"Vec2", "Vec3", "Hello", "ServerInfo", "VersionMismatch",
 		"AuthRequest", "AuthResponse", "EnterWorld",
+		"EntityState", "WorldSnapshot", "MoveInput", "Snapshot", "Ack",
+		"SpawnEntity", "DespawnEntity",
 		"Ping", "Pong", "JoinRoom", "JoinRoomResponse",
 	}
 	for _, name := range required {
