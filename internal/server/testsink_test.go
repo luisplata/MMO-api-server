@@ -17,7 +17,6 @@ type testSink struct {
 	sink     network.Sink
 	reliable chan []byte
 	realtime chan []byte
-	closed   chan struct{}
 }
 
 // newTestSink builds a bounded Sink plus the channels its writers feed.
@@ -27,12 +26,11 @@ func newTestSink(buffer int) *testSink {
 	ts := &testSink{
 		reliable: make(chan []byte, buffer),
 		realtime: make(chan []byte, buffer),
-		closed:   make(chan struct{}),
 	}
 	ts.sink = network.NewSink(
 		func(frame []byte) error { ts.reliable <- frame; return nil },
 		func(frame []byte) error { ts.realtime <- frame; return nil },
-		func() error { close(ts.closed); return nil },
+		func() error { return nil },
 	)
 	return ts
 }
@@ -71,15 +69,5 @@ func (ts *testSink) expectNoFrames(t *testing.T) {
 	case frame := <-ts.realtime:
 		t.Fatalf("unexpected realtime frame written: %v", frame)
 	case <-time.After(100 * time.Millisecond):
-	}
-}
-
-// waitClosed blocks until the sink's close callback runs.
-func (ts *testSink) waitClosed(t *testing.T) {
-	t.Helper()
-	select {
-	case <-ts.closed:
-	case <-time.After(2 * time.Second):
-		t.Fatal("sink was not closed")
 	}
 }

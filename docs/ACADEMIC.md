@@ -4,6 +4,7 @@
 > **Qué es esto**: un documento académico que explica **por qué** este servidor está construido así: la tecnología, la estrategia y las razones de cada decisión.
 > **No es el contrato operativo**: el contrato técnico exacto (bytes, mensajes, pasos) vive en [`PROTOCOL.md`](PROTOCOL.md). Este documento complementa ese contrato — leé los dos juntos.
 > **Cómo leerlo**: primero la Introducción y el Glosario; después los capítulos conceptuales (cada uno responde *qué problema resuelve → cómo funciona → por qué elegimos ESTO → qué alternativas había*); el decision log; el mapeo al código; y al final el contexto histórico, el porqué del workflow del proyecto y las rutas de aprendizaje.
+> **Estado de transporte (actual)**: el server es **WSS-only**; no hay listeners TCP/UDP, ni puertos `:8000`/`:8001`, ni flags `-tcp`/`-udp`. Las secciones que describen el diseño TCP/UDP se conservan como **material histórico/académico** y **no describen el runtime actual**.
 
 ---
 
@@ -84,7 +85,7 @@ De ese enunciado salen todos los problemas técnicos que este proyecto resuelve:
 | **Envelope** | "Sobre": el header binario fijo que envuelve a cada mensaje (magic, versión, tipo, flags, seq) + el payload protobuf. |
 | **Framing** | Cómo se separan los mensajes en el wire: en TCP con prefijo de longitud; en UDP un datagrama = un frame. |
 | **Broadcast** | Mandar un mensaje a todos los clientes, sin filtrar. Simple; O(n²) en el peor caso. |
-| **Host / endpoint** | Dirección de red (IP + puerto) a la que te conectás. Acá: TCP `:8000`, UDP `:8001`. |
+| **Host / endpoint** | Dirección de red (IP + puerto) a la que te conectás. Histórico: TCP `:8000`, UDP `:8001`; el runtime actual usa un único endpoint WSS. |
 
 ---
 
@@ -92,7 +93,7 @@ De ese enunciado salen todos los problemas técnicos que este proyecto resuelve:
 
 > Cada capítulo sigue la misma estructura: **(a) problema** → **(b) cómo funciona** → **(c) por qué elegimos ESTA opción** → **(d) alternativas y tradeoffs**.
 
-### 3.1 TCP vs UDP — por qué un MMO usa AMBOS
+### 3.1 TCP vs UDP — por qué un MMO usa AMBOS (histórico; el runtime actual es WSS-only)
 
 #### (a) Problema
 
@@ -440,7 +441,7 @@ Porque la alternativa — "no versionar" — es un desastre garantizado: un camb
 
 ---
 
-## 5. Cómo mapea el código
+## 5. Cómo mapea el código (histórico en lo referente a TCP/UDP; el runtime actual es WSS-only)
 
 ### 5.1 El viaje de un paquete, de punta a punta
 

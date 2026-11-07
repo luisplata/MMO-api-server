@@ -97,7 +97,7 @@ El server recibe el mapa con el flag `-map` (sin valor = fixture embebido `hills
 
 ```bash
 ./mmo-server -wss 10.0.0.10:8080 \
-  -wss-origins https://game.example.com \
+  -wss-origins game.example.com \
   -map /srv/mmo/maps/arena.heightmap
 ```
 
@@ -113,7 +113,7 @@ services:
       - -wss
       - mmo-server:8080
       - -wss-origins
-      - https://game.example.com
+      - game.example.com
       - -map
       - /maps/arena.heightmap
 ```
@@ -212,7 +212,7 @@ Browser ──wss(443)──► nginx (TLS + Host/Origin) ──ws(privado)─�
 | Flag | Valor | Por qué |
 |------|-------|---------|
 | `-wss` | `mmo-server:8080` en compose; `127.0.0.1:8080` si el proxy es local; `10.0.0.10:8080` en LAN privada | upstream privado; nunca publicar este puerto |
-| `-wss-origins` | `https://game.example.com` | allowlist explícita; un `*` aborta el boot |
+| `-wss-origins` | `game.example.com` | host patterns explícitos, sin esquema; un `*` aborta el boot |
 | `-map` | `/srv/mmo/maps/arena.heightmap` | mapa (ver §3–§8) |
 
 El binario **no** tiene flags `-cert`, `-key`, `-tls` ni equivalentes: emitir y renovar claves es responsabilidad del proxy.

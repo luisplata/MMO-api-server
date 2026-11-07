@@ -5,12 +5,13 @@
 > **Server truth**: verified against `proto/v1/world.proto` (contract, ids 13–18 + `EntityState.templateId`), `internal/session/handshake.go` (the `selecting` phase), `internal/server` (wiring). If this sheet and those files disagree, **the files win** — open an issue.
 > **Note**: the terrain heightmap has its own handoff sheet — `docs/UNITY_HEIGHTMAP_HANDOFF.md`. Do not conflate the two: this sheet is about the *character* flow, not terrain.
 > **Language note**: `MUST` = the server rejects/errors if violated. `SHOULD` = strongly recommended.
+> **Transport**: the current server is WSS-only; every message below travels over that single WebSocket connection (there are no TCP/UDP channels).
 
 ---
 
 ## 1. Executive Summary & Quick Delivery Path
 
-In v2 the login no longer drops you straight into the world. After `AuthResponse` the session sits in a **`selecting`** phase where you must **list, create and select a character** over TCP *before* `EnterWorld`. Each character references a **template**; the server resolves its stats and exposes the `templateId` so you can pick the right visual model.
+In v2 the login no longer drops you straight into the world. After `AuthResponse` the session sits in a **`selecting`** phase where you must **list, create and select a character** over the single WSS connection *before* `EnterWorld`. Each character references a **template**; the server resolves its stats and exposes the `templateId` so you can pick the right visual model.
 
 Quick path (no protoc needed — bindings are committed):
 
@@ -54,7 +55,7 @@ Rules you MUST follow:
 
 ## 3. The Messages You Need (ids 13–18)
 
-All over TCP (reliable channel). The `Character` message is:
+All over the single WSS connection (reliable channel). The `Character` message is:
 
 ```
 Character { id, accountId, name, templateId, stats { hp, speed, atk, def }, createdAt }

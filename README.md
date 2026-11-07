@@ -113,10 +113,10 @@ go build -o mmo-server ./cmd/server
 
 ```bash
 # Private upstream reachable by a local proxy
-./mmo-server -wss 127.0.0.1:8080 -wss-origins https://game.example.com
+./mmo-server -wss 127.0.0.1:8080 -wss-origins game.example.com
 
 # Explicit character data (defaults are data/templates.json + data/characters.json)
-./mmo-server -wss :8080 -wss-origins https://game.example.com \
+./mmo-server -wss :8080 -wss-origins game.example.com \
   -templates data/templates.json -characters data/characters.json
 
 # Dev-only payload logging (never in production)
