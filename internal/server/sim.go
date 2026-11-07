@@ -13,7 +13,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/luisplata/mmo-api-server/internal/game"
-	"github.com/luisplata/mmo-api-server/internal/network"
 	"github.com/luisplata/mmo-api-server/internal/protocol"
 	"github.com/luisplata/mmo-api-server/internal/stats"
 	"github.com/luisplata/mmo-api-server/internal/world"
@@ -104,8 +103,8 @@ func (s *Server) registerAndSnapshot(ctx context.Context, id string, spawn game.
 	return frame, err
 }
 
-// fanoutInterest drains the sim's pending spawn/despawn events and turns
-// them into TCP frames for each target (design D4, spec S18.2). The
+// fanoutInterest drains the sim's pending spawn/despawn events and hands
+// them to each target's outbound Sink (design D4/P3, spec S18.2). The
 // target set comes from the InterestResolver (v1 flat: everyone else).
 func (s *Server) fanoutInterest() {
 	events := s.sim.TakeInterestEvents()
@@ -116,9 +115,12 @@ func (s *Server) fanoutInterest() {
 	}
 }
 
-// fanoutEvent encodes one interest event for one target and writes it
-// over the target's TCP conn, encoded with the TARGET's negotiated wire
-// version. Missing targets/subjects are skipped without writing.
+// fanoutEvent encodes one interest event for one target and hands it to
+// the target's bounded outbound Sink (design P3), encoded with the
+// TARGET's negotiated wire version. Missing targets/subjects are skipped
+// without writing. The enqueue is non-blocking: a slow or broken target
+// is bounded by the sink's queue and a failed write closes only that
+// conn — never the sim-owner goroutine.
 func (s *Server) fanoutEvent(ev world.InterestEvent, target string) {
 	var msg proto.Message
 	switch ev.Kind {
@@ -136,12 +138,12 @@ func (s *Server) fanoutEvent(ev world.InterestEvent, target string) {
 	s.mu.Lock()
 	p := s.players[target]
 	s.mu.Unlock()
-	if p == nil || p.tcp == nil {
+	if p == nil || p.sink == nil {
 		return // target gone or not yet connected
 	}
 	frame, err := s.reg.EncodeMessage(msg, protocol.Envelope{Version: p.sess.WireVersion()})
 	if err != nil {
 		return
 	}
-	_ = network.WriteFrame(p.tcp, frame)
+	_ = p.sink.Reliable(frame)
 }

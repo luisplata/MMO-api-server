@@ -364,10 +364,15 @@ func (s *Server) enterWorld(ctx context.Context, conn net.Conn, sess *session.Se
 		s.mu.Lock()
 		delete(s.players, cid)
 		s.mu.Unlock()
-		_ = p.sink.Close()
+		if p.sink != nil {
+			_ = p.sink.Close() // release the sink built above (design P3)
+		}
 		return err
 	}
-	return network.WriteFrame(conn, frame)
+	// Route the REAL WorldSnapshot through the bounded sink's reliable
+	// queue (design P3): a broken client tears down only its own conn,
+	// and the enqueue never blocks the conn goroutine.
+	return p.sink.Reliable(frame)
 }
 
 // newConnSink builds the per-connection outbound Sink (design P2).

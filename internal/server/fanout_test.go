@@ -35,15 +35,17 @@ func addTargetPlayer(t *testing.T, srv *Server, id string) net.Conn {
 }
 
 // mapPlayerWithConn registers a player in the server map only (no sim
-// entry) with a net.Pipe conn.
+// entry) with a net.Pipe conn and a production-faithful outbound Sink
+// (design P3) whose reliable writer delivers over the server end.
 func mapPlayerWithConn(t *testing.T, srv *Server, id string) net.Conn {
 	t.Helper()
 	serverConn, clientConn := net.Pipe()
 	t.Cleanup(func() { _ = clientConn.Close() })
 	sess := newInWorldSession(t, srv.reg, id)
-	addTestPlayer(t, srv, id, sess)
+	sink := srv.newConnSink(serverConn, sess)
+	t.Cleanup(func() { _ = sink.Close() })
 	srv.mu.Lock()
-	srv.players[id].tcp = serverConn
+	srv.players[id] = &player{sess: sess, tr: &mockTransport{}, tcp: serverConn, sink: sink}
 	srv.mu.Unlock()
 	return clientConn
 }
