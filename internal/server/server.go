@@ -236,13 +236,22 @@ func (s *Server) acceptLoop(ctx context.Context, ln net.Listener) error {
 	}
 }
 
-// handleConn drives one session over its TCP conn: it reads length-
-// prefixed frames, feeds them to the session, and when the session
+// handleConn drives one session over its TCP conn. The frame reads go
+// through a length-prefixed FrameSource (design P1): the session never
+// touches the raw net.Conn for reading, so the inbound transport is
+// swappable (TCP today, WSS in a later slice) with identical on-wire
+// bytes.
+func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
+	s.serveConn(ctx, network.NewLenPrefixSource(conn), conn)
+}
+
+// serveConn drives one session over an inbound FrameSource: it reads
+// frames via src.Next(), feeds them to the session, and when the session
 // reaches in-world it registers the player in the simulation and sends
 // the REAL WorldSnapshot. On any read error (io.EOF at a clean
 // boundary, oversize frame, network failure) or session protocol error
 // the connection is cleaned up.
-func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
+func (s *Server) serveConn(ctx context.Context, src network.FrameSource, conn net.Conn) {
 	tr := &tcpConnTransport{conn: conn}
 	sess, err := session.NewSession(s.reg, tr, session.Config{
 		MinProtoVer:      s.cfg.MinProtoVer,
@@ -262,7 +271,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	defer s.cleanupConn(ctx, conn, sess)
 
 	for {
-		frame, err := network.ReadFrame(conn)
+		frame, err := src.Next()
 		if err != nil {
 			return
 		}
