@@ -238,3 +238,56 @@ go test ./internal/e2e/ -run TestWSSThroughTLSProxy
 - En compose el game server solo declara `expose` interno: no se publica ningún puerto del juego, solo el proxy es público.
 - El upstream responde plano porque confía en el salto del proxy. Publicarlo anula TLS y la allowlist.
 - Rollback: revertir P9 (config/docs/test) no toca P8; el server sigue arrancando con `-wss`.
+
+---
+
+## 11. Salas públicas MVP — límites operativos (P20)
+
+Esta sección fija lo que el deploy público **sí** y **no** hace. Si una configuración contradice esto, está mal.
+
+### 11.1 Un solo camino público: WSS
+
+- El browser conecta por `wss://<host>/ws`; TLS termina en el proxy (§10).
+- El binario Go escucha plano en un upstream privado (`:8080`), nunca publicado.
+- No hay listeners legacy ni flags de transporte TCP/UDP; no hay fallback a `ws://` público.
+
+### 11.2 Matchmaking público
+
+| Modo | `JoinRoom.mode` | Comportamiento |
+|------|-----------------|----------------|
+| `NextAvailable` | 1 | Reutiliza una sala pública con cupo; si ninguna tiene cupo, crea una sala pública y reserva atómicamente. |
+| `ByID` | 2 | Une a una sala pública conocida por `roomId`. |
+
+- Capacidad: **2 jugadores activos** por sala. Sin espectadores.
+- Sin salas privadas, sin códigos, sin modo `Create`. Las privadas quedan para un SDD aparte que requiere auth real.
+- `roomId` es un identificador, **no una credencial**; la admisión depende de cupo, estado y ownership.
+- Reserva con lease de **30 s**; la desconexión libera el slot.
+- El segundo jugador entra en vivo, en el spawn fijo del server, sin ready gate.
+- `Ping`/`Pong` de aplicación: RTT/EMA/jitter fuera del tick, máximo 5/s.
+
+### 11.3 Identidad y auth
+
+- `-dev-auth=true` es **solo para desarrollo**: acepta cualquier credencial y NO prueba identidad real.
+- Producción: `-dev-auth=false` hasta que exista un backend de auth real. No documentar ni asumir cuentas confiables.
+
+### 11.4 Datos de personajes
+
+| Flag | Default | Si falta o está corrupto |
+|------|---------|--------------------------|
+| `-templates` | `data/templates.json` | el boot falla (fail-fast) |
+| `-characters` | `data/characters.json` | el boot falla (fail-fast) |
+
+La imagen Docker copia `data/` (ver `Dockerfile`) para que esos defaults funcionen dentro del contenedor.
+
+### 11.5 Observabilidad
+
+- Logs de metadatos JSON por mensaje fiable: **siempre activos**.
+- `-log-payloads=true` agrega solo campos decodificados y allowlisted; es opt-in y dev-only.
+- Password y `udpToken`/secretos se redactan **siempre**, incluso con el flag.
+
+### 11.6 Single-instance (límite conocido)
+
+- El estado del mundo vive **en memoria** de un proceso.
+- Cada réplica es un **mundo independiente**: no hay directorio compartido ni placement.
+- `docker compose up --scale mmo-server=N` sirve para probar el protocolo contra N servers, **no** para un mundo compartido.
+- Coordinación multi-réplica (directorio/placement) es trabajo futuro.

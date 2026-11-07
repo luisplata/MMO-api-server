@@ -1,8 +1,8 @@
 # Protocolo World Simulation v2 — contrato de wire
 
-> **Para**: desarrollador del cliente Unity.
-> **Qué es**: el contrato binario entre `mmo-api-server` (Go) y el cliente (C#/Unity).
-> **Fuente de verdad**: `proto/v1/world.proto`. El código generado (Go y C#) está **commiteado** en `proto/v1/gen/` — no necesitás protoc.
+> **Para**: desarrollador del cliente web (TypeScript/protobuf-es) y mantenedores del contrato.
+> **Qué es**: el contrato binario entre `mmo-api-server` (Go) y los clientes (browser TS y Unity/C#) sobre **WSS**.
+> **Fuente de verdad**: `proto/v1/world.proto`. El código generado (Go, C# y TypeScript) está **commiteado** en `proto/v1/gen/` — no necesitás protoc ni buf.
 > **Versión del contrato**: v2 (rango negociado `[2, 2]`). Un cliente v1 es rechazado con `VersionMismatch` antes de auth (fail-fast).
 > **Terreno**: el mapa de alturas tiene su propio contrato en [`HEIGHTMAP.md`](HEIGHTMAP.md) — el server samplea el terreno y la altura viaja en `pos.y`/`spawnPos.y` (ver §5).
 > **Personajes**: el flujo de personajes (listar/crear/seleccionar antes de entrar al mundo, `templateId`) tiene su hoja de handoff Unity en [`UNITY_CHARACTER_HANDOFF.md`](UNITY_CHARACTER_HANDOFF.md) (ver §4 y §5).
@@ -11,48 +11,36 @@
 
 ## 1. TL;DR — conectarse en 5 pasos
 
-1. **Conectá TCP** a `<host>:8000` y mandá `Hello{ protoVer: 2 }`.
-2. Recibís `ServerInfo` (versión negociada, `tickRate`, `serverTime`) → mandá `AuthRequest{ username, password }`.
-3. Recibís `AuthResponse{ ok, playerId, udpToken }` (ya **no** trae `spawnPos`; la sesión queda en **`selecting`**). En esa fase: `ListCharacters`, y/o `CreateCharacter` + `SelectCharacter` (este último te resuelve `spawnPos` + `stats` + `templateId`).
-4. Recién ahí mandá `EnterWorld`. Recibís dos `WorldSnapshot` por TCP (el primero vacío = ack de `EnterWorld`; el segundo = estado real del mundo). **Bindeá UDP**: el **primer datagrama** a `<host>:8001` es el `udpToken` **crudo** (sin envelope).
-5. **Estado estable**: mandá `MoveInput` por UDP, recibís `Snapshot` a 10 Hz, y escuchá `SpawnEntity`/`DespawnEntity` por TCP. Cada `EntityState` trae `templateId` para elegir el modelo visual.
+1. Abrí **`wss://<proxy-host>/ws`** (TLS termina en el proxy) y mandá `Hello{ protoVer: 2 }`.
+2. Recibís `ServerInfo` (versión, `tickRate`, `serverTime`) → mandá `AuthRequest{ username, password }`.
+3. Recibís `AuthResponse{ ok, playerId }` y quedás en **`selecting`**: `ListCharacters`, `CreateCharacter` + `SelectCharacter` (este último resuelve `spawnPos` + `stats` + `templateId`).
+4. En `selecting` mandá `JoinRoom{ mode: 1 }` (`NextAvailable`) o `{ mode: 2, roomId }` (`ByID`) → `JoinRoomResponse{ roomId, capacity, occupancy }`. `EnterWorld` exige personaje **y** sala.
+5. Mandá `EnterWorld` → dos `WorldSnapshot` (vacío = ack, real = estado). Estado estable: `MoveInput`/`Snapshot` por el mismo WSS y `Ping`/`Pong` para latencia.
 
-```csharp
-// Pseudo-C# (Unity). Los helpers Send/Recv codifican el envelope por vos.
-var tcp = ConnectTcp(host, 8000);
-Send(new Hello { ProtoVer = 2 });                    // paso 1
-var info = Recv<ServerInfo>();                       // paso 2
-Send(new AuthRequest { Username = user, Password = pass });
-var auth = Recv<AuthResponse>();                     // paso 3 — guardá UdpToken (ya no trae SpawnPos)
-Send(new ListCharacters());                          // paso 3 — fase selecting
-var list = Recv<CharacterList>();                    // personajes de la cuenta
-Send(new CreateCharacter { TemplateId = "warrior", Name = "Hero" });
-var created = Recv<CreateCharacterResponse>();       // Character { id, templateId, stats }
-Send(new SelectCharacter { CharacterId = created.Character.Id });
-var sel = Recv<SelectCharacterResponse>();           // spawnPos + stats + templateId
-Send(new EnterWorld());                              // paso 4 — recién ahora
-Recv<WorldSnapshot>();                               // paso 4 — vacío (ack)
-Recv<WorldSnapshot>();                               // paso 4 — real (estado del mundo)
+```ts
+import { create } from "@bufbuild/protobuf";
+import { JoinRoomSchema, type JoinRoom } from "./gen/v1/world_pb";
 
-var udp = new UdpClient(host, 8001);
-udp.Send(auth.UdpToken);                             // paso 4 — token crudo, primer datagrama
-
-udp.Send(MoveInput { Seq = ++clientSeq, Dir = ..., Speed = 5f, Yaw = ... }); // paso 5
-var snap = RecvUdp<Snapshot>();                      // paso 5 — 10 Hz
+const join: JoinRoom = create(JoinRoomSchema, { mode: 1, roomId: "" });
+// mode=1 NextAvailable (roomId ignorado); mode=2 ByID (roomId conocido)
 ```
 
 ---
 
-## 2. Split de transporte
+## 2. Transporte único: WSS
 
-| Canal | Mensajes | Fiabilidad | Uso |
-|-------|----------|-----------|-----|
-| **TCP** (`:8000`) | `Hello`, `ServerInfo`, `VersionMismatch`, `AuthRequest`, `AuthResponse`, `ListCharacters`, `CharacterList`, `CreateCharacter`, `CreateCharacterResponse`, `SelectCharacter`, `SelectCharacterResponse`, `EnterWorld`, `WorldSnapshot`, `SpawnEntity`, `DespawnEntity`, `Ack` | Fiable — stream reensamblado por prefijo de longitud | Lifecycle, handshake, auth, selección de personaje (ids 13–18), spawn/despawn, comandos fiables |
-| **UDP** (`:8001`) | `MoveInput` (cliente→servidor), `Snapshot` (servidor→cliente) | No fiable — 1 datagrama = 1 frame | Movimiento y sync del mundo |
+Todos los mensajes (ids 1–22) viajan por **una sola conexión WebSocket binaria**. No hay canales TCP/UDP separados ni fallback a `ws://`.
 
-- **NO hay KCP en v2.** UDP es crudo, sin capa de fiabilidad encima. `Ack` existe (v2 sin retransmisión), pero no hay reenvío.
-- Un mensaje que no quepa en UDP (ver sección 3) **debe** ir por TCP.
-- Los puertos son los defaults del server (`-tcp :8000`, `-udp :8001`); en Docker se exponen igual.
+| Propiedad | Valor |
+|-----------|-------|
+| Endpoint público | `wss://<proxy-host>/ws` (TLS en el proxy) |
+| Upstream Go | privado `:8080`, nunca publicado |
+| Framing | 1 mensaje WebSocket binario = 1 frame |
+| Límite | 64 KiB por frame |
+| Fiabilidad | Lifecycle/comandos por cola fiable; movimiento/snapshots por cola realtime (depth-1) |
+
+- `Ack` sigue existiendo (v2 sin retransmisión); no hay KCP ni datagramas.
+- El server no escucha en ningún puerto público de juego; el proxy es el único listener.
 
 ---
 
@@ -87,83 +75,88 @@ var snap = RecvUdp<Snapshot>();                      // paso 5 — 10 Hz
 
 > ⚠️ No confundir el `seq` del **envelope** (per-session, para needs-ack) con el `seq` del **`Snapshot`** (monotónico del server) ni con el `seq` del **`MoveInput`** (del cliente). Son tres contadores distintos — detalle en la sección 7.
 
-### TCP
+### WSS
 
-- `[4 bytes BE uint32 = longitud][payload]`, con `payload ≤ 64 KiB`.
-- El reader reensambla el stream por prefijo de longitud.
-- **Frame > 64 KiB → la conexión se cierra** (`ErrFrameTooLarge`). El stream no se puede resincronizar.
-- **Stream truncado** a mitad de header o payload → error de frame incompleto; **nunca** se entrega un frame corrupto.
-
-### UDP
-
-- **1 datagrama = 1 frame**. El frame (envelope completo) no puede superar **1200 B** (MTU-safe, sin fragmentación IP).
-- **Datagrama > 1200 B → rechazado entero**, nunca fragmentado ni enviado a medias.
-- El bind del token (primer datagrama) es la única excepción al envelope: es el token **crudo**, sin header.
+- Cada mensaje WebSocket **binario** lleva exactamente un frame (envelope completo).
+- El server valida el tamaño (**≤ 64 KiB**) y cierra la conexión si un frame lo excede.
+- No hay prefijo de longitud ni datagramas: el framing lo provee WebSocket.
+- Un frame truncado o inválido cierra la conexión; nunca se entrega parcial.
 
 ---
 
 ## 4. Handshake & ciclo de vida
 
 ```
-Cliente (Unity)                          Servidor (mmo-api-server)
-      |  TCP: conecta                         |
+Cliente (browser)                        Servidor (mmo-api-server)
+      |  WSS: conecta /ws                     |
       |────── Hello{ protoVer: 2 } ──────────►|
       |◄───── ServerInfo{ protoVer:2, tickRate:20, serverTime } ─|
       |────── AuthRequest{ username, password } ►|
-      |◄───── AuthResponse{ ok, playerId, udpToken } ─|  ← fase selecting
+      |◄───── AuthResponse{ ok, playerId } ──|  ← fase selecting
       |────── ListCharacters ────────────────►|
       |◄───── CharacterList{ characters[] } ──|
       |────── CreateCharacter{ templateId, name } ►|
       |◄───── CreateCharacterResponse{ ok, character } ─|
       |────── SelectCharacter{ characterId } ►|
-      |◄───── SelectCharacterResponse{ ok, character, spawnPos } ─|  ← selecting → entering
+      |◄───── SelectCharacterResponse{ ok, character, spawnPos } ─|
+      |────── JoinRoom{ mode, roomId } ──────►|
+      |◄───── JoinRoomResponse{ roomId, capacity, occupancy } ─|  ← selecting → entering
       |────── EnterWorld ────────────────────►|
       |◄───── WorldSnapshot (VACÍO — ack de EnterWorld, needs-ack) ─|
       |◄───── WorldSnapshot (REAL — estado completo del mundo) ─|
-      |  UDP: bind                            |
-      |────── udpToken (datagrama CRUDO) ────►|  ← primer datagrama
-      |◄───── Snapshot{ seq, entities } ──────|  ← estado estable (10 Hz)
-      |────── MoveInput{ seq, dir, speed, yaw } ►| ← por UDP
+      |────── MoveInput / Ping ──────────────►|  ← mismo WSS
+      |◄───── Snapshot{ seq, entities } / Pong ─|  ← 10 Hz / eco
 ```
 
 Reglas del ciclo de vida:
 
-- **Fase `selecting` (nueva en v2)**: tras un `AuthResponse` ok, la sesión NO está lista para `EnterWorld`. `ListCharacters`/`CreateCharacter`/`SelectCharacter` son los únicos mensajes válidos en `selecting`; `SelectCharacter` resuelve `spawnPos` + `stats` + `templateId` y recién ahí la sesión pasa a `entering`. `EnterWorld` antes de seleccionar un personaje → error de protocolo y la sesión se cierra.
-- **Fuera de orden = cierre.** Cada mensaje solo es válido en su estado (ej.: `EnterWorld` antes de auth → error de protocolo y la sesión se cierra).
-- **Dos `WorldSnapshot` al entrar**: el primero es el ack del `EnterWorld` (vacío, con flag `needs-ack` — contestalo con `Ack`); el segundo lo manda el server cuando te registra en la simulación y es el estado **real** del mundo (todos los jugadores, v2 flat fanout). Cada `EntityState` de ese snapshot y de los `Snapshot`/`SpawnEntity` lleva el `templateId` del personaje.
-- **Bind UDP**: el server asocia tu dirección UDP con tu sesión TCP autenticada usando el token. **Tokens incorrectos/desconocidos se ignoran** (no bindean). Después del bind, solo la dirección bindeada recibe snapshots.
-- **Timeout de handshake**: 10 s desde la conexión (default del server, hardcodeado en `cmd/server/main.go` — no es flag). Si el handshake no completa a tiempo, el siguiente frame cierra la sesión.
-- **Login duplicado**: un segundo `playerId` ya conectado se rechaza (la segunda conexión se cae).
-- Tras `EnterWorld`, el cliente es **responsable de bindear UDP**: los snapshots no llegan hasta que el server tenga tu addr bindeada.
+- **Fase `selecting`**: tras un `AuthResponse` ok, `ListCharacters`/`CreateCharacter`/`SelectCharacter`/`JoinRoom` son los mensajes válidos. `SelectCharacter` resuelve `spawnPos` + `stats` + `templateId`; `JoinRoom` reserva una sala.
+- **Dos requisitos**: la sesión pasa a `entering` solo con personaje seleccionado **y** sala reservada; `EnterWorld` sin cualquiera de los dos → error de protocolo y cierre.
+- **Fuera de orden = cierre.** Cada mensaje solo es válido en su estado (ej.: `EnterWorld` antes de auth → cierre).
+- **Dos `WorldSnapshot` al entrar**: el primero es el ack (vacío, `needs-ack` — contestalo con `Ack`); el segundo es el estado **real** del mundo (v2 flat fanout). Cada `EntityState` lleva el `templateId` del personaje.
+- **Sala**: `JoinRoomResponse` all-zero significa que no se reservó nada (sala llena, inexistente o modo inválido). `roomId` es un identificador, **no** una credencial.
+- **Timeout de handshake**: 10 s desde la conexión (hardcodeado en `cmd/server/main.go` — no es flag).
+- **Login duplicado**: un segundo `playerId` ya conectado se rechaza.
+- **Sin bind UDP**: todo el tráfico, incluido `MoveInput`/`Snapshot`, usa la misma conexión WSS. `AuthResponse.udpToken` queda en el schema por compatibilidad y se ignora.
 
 ---
 
-## 5. Catálogo de mensajes (ids 1–20)
+## 5. Catálogo de mensajes (ids 1–22)
 
 Tipos embebidos (no son mensajes de envelope): `Vec2{ x, z }` (plano de tierra: velocidad y `MoveInput.dir`), `Vec3{ x, y, z }` (**posición y spawn** — la `y` es la **altura derivada del terreno**, calculada por el server a partir del mapa de alturas, **nunca enviada por el cliente**; la cámara sigue siendo client-local, no se networkea), `EntityState{ id, pos, velocity, yaw, templateId }` (**yaw en radianes**; `templateId` es la **plantilla del personaje** — aditivo, campo 5 — para que el cliente elija el modelo visual, vacío en entidades no-personaje; **no existen** pitch/roll, es estructuralmente imposible), `Stats{ hp, speed, atk, def }` (los valores numéricos de la hoja del personaje) y `Character{ id, accountId, name, templateId, stats, createdAt }` (un personaje de la cuenta; `id` es la **entidad del mundo** cuando se selecciona).
 
 | Id | Mensaje | Dirección | Transporte | Campos clave | Notas |
 |----|---------|-----------|------------|--------------|-------|
-| 1 | `Hello` | C → S | TCP | `protoVer (int32)` | Abre la sesión y negocia versión. Fuera del rango del server (`[2,2]`) → `VersionMismatch` + cierre. |
-| 2 | `ServerInfo` | S → C | TCP | `protoVer`, `tickRate (20)`, `serverTime (ms epoch)` | Respuesta a `Hello`. Usá `serverTime` para time-sync. |
-| 3 | `AuthRequest` | C → S | TCP | `username`, `password` | Dev mode: acepta cualquier credencial (`username` = `playerId`). |
-| 4 | `AuthResponse` | S → C | TCP | `ok`, `playerId`, `spawnPos (Vec3)`, `udpToken (bytes)`, `errorMessage` | `ok=false` → `errorMessage` y la sesión se cierra. `udpToken` = 16 bytes. `spawnPos.y` = altura del terreno en el spawn. |
-| 5 | `EnterWorld` | C → S | TCP | — (vacío) | Solo válido tras auth OK. |
-| 6 | `WorldSnapshot` | S → C | TCP | `entities[] (EntityState)` | Llegan dos: vacío (ack de `EnterWorld`, needs-ack) + real (estado completo, v2 flat). |
-| 7 | `MoveInput` | C → S | UDP | `seq (int32, del cliente)`, `dir (Vec2)`, `speed (float)`, `yaw (float)` | Intención: el server valida y clampa (`≤ 10 u/s`), normaliza `dir` e integra autoritativamente. **No lleva altura.** |
-| 8 | `Snapshot` | S → C | UDP | `seq (int32, server, monotónico)`, `entities[]` | 10 Hz. Descartá `seq ≤ last-applied` (duplicados y viejos). |
-| 9 | `VersionMismatch` | S → C | TCP | `minVer`, `maxVer` | Se envía y **cierra** la sesión. |
-| 10 | `Ack` | ambos | TCP | `seq (uint32)` | Acuse de un frame con `needs-ack`. v2: **sin retransmisión**. Un `Ack` nunca se contesta con otro `Ack`. |
-| 11 | `SpawnEntity` | S → C | TCP | `entityId`, `state (EntityState)` | Cuando una entidad entra en tu interés (v2 flat: al hacer join). Lleva estado completo (incluido `templateId`) para no esperar al próximo snapshot. |
-| 12 | `DespawnEntity` | S → C | TCP | `entityId` | Cuando una entidad sale de tu interés (v2 flat: al dejar la sesión). Solo el id — removela. |
-| 13 | `ListCharacters` | C → S | TCP | — (vacío) | Pide los personajes de la cuenta autenticada. Solo válido en `selecting`. |
-| 14 | `CharacterList` | S → C | TCP | `characters[] (Character)` | Respuesta a `ListCharacters`. Vacío si la cuenta no tiene personajes (no es error). |
-| 15 | `CreateCharacter` | C → S | TCP | `templateId`, `name` | Crea un personaje para la cuenta. Solo válido en `selecting`. Valida plantilla, nombre (trim 3–16, `[a-zA-Z0-9_]`) y unicidad por cuenta. |
-| 16 | `CreateCharacterResponse` | S → C | TCP | `ok`, `character (Character)`, `errorMessage` | `ok=true` → `character` (id + `templateId` + stats congeladas de la plantilla). `ok=false` → `errorMessage` (plantilla inexistente, nombre inválido/duplicado); **no muta** estado. |
-| 17 | `SelectCharacter` | C → S | TCP | `characterId` | Activa un personaje de la cuenta como entidad del mundo. Solo válido en `selecting`; verifica que exista y pertenezca a la cuenta. |
-| 18 | `SelectCharacterResponse` | S → C | TCP | `ok`, `character (Character)`, `spawnPos (Vec3)`, `errorMessage` | `ok=true` → `spawnPos` (altura del terreno resuelta) + `character` (`stats` + `templateId`) y la sesión pasa a `entering`. `ok=false` → `errorMessage` (personaje ajeno/inexistente); el activo no cambia. |
+| 1 | `Hello` | C → S | WSS | `protoVer (int32)` | Abre la sesión y negocia versión. Fuera del rango del server (`[2,2]`) → `VersionMismatch` + cierre. |
+| 2 | `ServerInfo` | S → C | WSS | `protoVer`, `tickRate (20)`, `serverTime (ms epoch)` | Respuesta a `Hello`. Usá `serverTime` para time-sync. |
+| 3 | `AuthRequest` | C → S | WSS | `username`, `password` | Dev mode: acepta cualquier credencial (`username` = `playerId`). |
+| 4 | `AuthResponse` | S → C | WSS | `ok`, `playerId`, `udpToken (bytes)`, `errorMessage` | `ok=false` → `errorMessage` y la sesión se cierra. `spawnPos` ya no se usa (lo resuelve `SelectCharacter`); `udpToken` es un campo legacy ignorado por clientes WSS. |
+| 5 | `EnterWorld` | C → S | WSS | — (vacío) | Solo válido con personaje seleccionado y sala reservada. |
+| 6 | `WorldSnapshot` | S → C | WSS | `entities[] (EntityState)` | Llegan dos: vacío (ack de `EnterWorld`, needs-ack) + real (estado completo, v2 flat). |
+| 7 | `MoveInput` | C → S | WSS | `seq (int32, del cliente)`, `dir (Vec2)`, `speed (float)`, `yaw (float)` | Intención: el server valida y clampa (`≤ 10 u/s`), normaliza `dir` e integra autoritativamente. **No lleva altura.** |
+| 8 | `Snapshot` | S → C | WSS | `seq (int32, server, monotónico)`, `entities[]` | 10 Hz. Descartá `seq ≤ last-applied` (duplicados y viejos). |
+| 9 | `VersionMismatch` | S → C | WSS | `minVer`, `maxVer` | Se envía y **cierra** la sesión. |
+| 10 | `Ack` | ambos | WSS | `seq (uint32)` | Acuse de un frame con `needs-ack`. v2: **sin retransmisión**. Un `Ack` nunca se contesta con otro `Ack`. |
+| 11 | `SpawnEntity` | S → C | WSS | `entityId`, `state (EntityState)` | Cuando una entidad entra en tu interés (v2 flat: al hacer join). Lleva estado completo (incluido `templateId`) para no esperar al próximo snapshot. |
+| 12 | `DespawnEntity` | S → C | WSS | `entityId` | Cuando una entidad sale de tu interés (v2 flat: al dejar la sesión). Solo el id — removela. |
+| 13 | `ListCharacters` | C → S | WSS | — (vacío) | Pide los personajes de la cuenta autenticada. Solo válido en `selecting`. |
+| 14 | `CharacterList` | S → C | WSS | `characters[] (Character)` | Respuesta a `ListCharacters`. Vacío si la cuenta no tiene personajes (no es error). |
+| 15 | `CreateCharacter` | C → S | WSS | `templateId`, `name` | Crea un personaje para la cuenta. Solo válido en `selecting`. Valida plantilla, nombre (trim 3–16, `[a-zA-Z0-9_]`) y unicidad por cuenta. |
+| 16 | `CreateCharacterResponse` | S → C | WSS | `ok`, `character (Character)`, `errorMessage` | `ok=true` → `character` (id + `templateId` + stats congeladas de la plantilla). `ok=false` → `errorMessage` (plantilla inexistente, nombre inválido/duplicado); **no muta** estado. |
+| 17 | `SelectCharacter` | C → S | WSS | `characterId` | Activa un personaje de la cuenta como entidad del mundo. Solo válido en `selecting`; verifica que exista y pertenezca a la cuenta. |
+| 18 | `SelectCharacterResponse` | S → C | WSS | `ok`, `character (Character)`, `spawnPos (Vec3)`, `errorMessage` | `ok=true` → `spawnPos` (altura del terreno resuelta) + `character` (`stats` + `templateId`) y la sesión pasa a `entering`. `ok=false` → `errorMessage` (personaje ajeno/inexistente); el activo no cambia. |
 | 19 | `Ping` | C → S | WSS | `nonce (uint64)`, `clientTime (int64, ms epoch)` | Probe de latencia. El server lo responde fuera del tick; máximo 5/s por sesión (el exceso se descarta). |
 | 20 | `Pong` | S → C | WSS | `nonce`, `clientTime` | Echo inmediato del `Ping`. Calculá RTT con `clientTime`; ver §7. |
+| 21 | `JoinRoom` | C → S | WSS | `mode (int32)`, `roomId (string)` | Modo 1 `NextAvailable` (ignora `roomId`): reutiliza cupo o crea sala. Modo 2 `ByID`: une a una sala pública conocida. Cualquier otro modo → respuesta cero. |
+| 22 | `JoinRoomResponse` | S → C | WSS | `roomId`, `capacity`, `occupancy` | All-zero = nada reservado (lleno/inexistente/modo inválido). Capacidad 2, sin espectadores ni salas privadas. |
+
+### Sala pública (MVP)
+
+- Dos modos únicamente: `NextAvailable` (1) y `ByID` (2). No existe `Create`, `ByCode` ni `roomCode`.
+- Capacidad **2 jugadores activos**; sin espectadores. El segundo entra en vivo en el spawn fijo del server, sin ready gate.
+- La reserva tiene lease de **30 s**; la desconexión la libera.
+- `roomId` es un identificador, no una credencial; la admisión depende de cupo, estado y ownership.
+- Salas privadas/por código: SDD aparte, requieren auth real.
 
 ---
 
@@ -208,17 +201,16 @@ v2 **no tiene códigos numéricos de error en el wire**. Las fallas se manifiest
 
 | Condición | Qué ves en el wire | Canal | Comportamiento |
 |-----------|-------------------|-------|----------------|
-| Versión fuera de rango | `VersionMismatch{ minVer, maxVer }` | TCP | Se envía y se cierra. |
-| Auth fallida | `AuthResponse{ ok:false, errorMessage }` | TCP | Se envía y se cierra. |
-| Mensaje ilegal (fuera de estado) | — (sin mensaje) | TCP | Se cierra. |
-| Timeout de handshake (> 10 s) | — (sin mensaje) | TCP | Se cierra. |
-| Frame TCP > 64 KiB | — (sin mensaje) | TCP | Se cierra (`ErrFrameTooLarge`). |
-| Stream TCP truncado | — | TCP | Error de frame incompleto; nunca un frame corrupto. |
-| Datagrama UDP > 1200 B | — | UDP | Rechazado entero, nunca fragmentado. |
-| Magic inválido / tipo desconocido | — (sin mensaje) | TCP/UDP | Se cierra (TCP) o se ignora (UDP). |
-| Token UDP incorrecto/desconocido | — (sin mensaje) | UDP | Ignorado — no bindea. |
+| Versión fuera de rango | `VersionMismatch{ minVer, maxVer }` | WSS | Se envía y se cierra. |
+| Auth fallida | `AuthResponse{ ok:false, errorMessage }` | WSS | Se envía y se cierra. |
+| Mensaje ilegal (fuera de estado) | — (sin mensaje) | WSS | Se cierra. |
+| Timeout de handshake (> 10 s) | — (sin mensaje) | WSS | Se cierra. |
+| Frame WSS > 64 KiB | — (sin mensaje) | WSS | Se cierra (`ErrFrameTooLarge`). |
+| Frame WSS truncado | — | WSS | Error de frame incompleto; nunca un frame corrupto. |
+| Magic inválido / tipo desconocido | — (sin mensaje) | WSS | Se cierra la conexión. |
+| `JoinRoom` lleno/inexistente/modo inválido | `JoinRoomResponse{}` (all-zero) | WSS | Sin reserva; la sesión sigue en `selecting`. |
 
-> En TCP, ante cualquier violación el server **cierra** la conexión: el cliente debe reintentar con una sesión nueva. En UDP no hay cierre — los frames inválidos simplemente se descartan.
+> Ante cualquier violación de framing o estado, el server **cierra** la conexión: el cliente debe reintentar con una sesión nueva.
 
 ### Rechazos de character-management (no cierran la sesión)
 
@@ -226,11 +218,11 @@ A diferencia de las violaciones de estado de arriba, los rechazos de `CreateChar
 
 | Condición | Mensaje | Canal |
 |-----------|---------|-------|
-| Plantilla inexistente | `CreateCharacterResponse{ ok:false, errorMessage:"template not found" }` | TCP |
-| Nombre inválido (vacío / fuera de rango / charset) | `CreateCharacterResponse{ ok:false, errorMessage:<razón> }` | TCP |
-| Nombre duplicado por cuenta | `CreateCharacterResponse{ ok:false, errorMessage:"name already used in account" }` | TCP |
-| Personaje inexistente | `SelectCharacterResponse{ ok:false, errorMessage:"character not found" }` | TCP |
-| Personaje ajeno (de otra cuenta) | `SelectCharacterResponse{ ok:false, errorMessage:"character not owned by account" }` | TCP |
+| Plantilla inexistente | `CreateCharacterResponse{ ok:false, errorMessage:"template not found" }` | WSS |
+| Nombre inválido (vacío / fuera de rango / charset) | `CreateCharacterResponse{ ok:false, errorMessage:<razón> }` | WSS |
+| Nombre duplicado por cuenta | `CreateCharacterResponse{ ok:false, errorMessage:"name already used in account" }` | WSS |
+| Personaje inexistente | `SelectCharacterResponse{ ok:false, errorMessage:"character not found" }` | WSS |
+| Personaje ajeno (de otra cuenta) | `SelectCharacterResponse{ ok:false, errorMessage:"character not owned by account" }` | WSS |
 
 ---
 
@@ -254,9 +246,9 @@ A diferencia de las violaciones de estado de arriba, los rechazos de `CreateChar
 - [ ] **AOT-safe**: sin `DynamicMessage`, sin `Any`, sin `JsonParser` (rutas de reflexión → prohibidas en IL2CPP).
 - [ ] Usá **solo las clases generadas** de `Mmo.V1` (`proto/v1/gen/csharp/World.cs`, commiteado — no corras protoc).
 - [ ] Serializá/deserializá con `MessageParser` del código generado. Nada de serialización a mano, nada de gob.
-- [ ] Transport: `TcpClient` + `UdpClient` de .NET (o el reemplazo Unity que uses). El server solo habla raw TCP/UDP.
-- [ ] TCP: escribí `[4 bytes BE longitud] + envelope`; leé igual (reensamblá por longitud).
-- [ ] UDP: un datagrama = un envelope (`≤ 1200 B`). El primer datagrama es el token **crudo**.
+- [ ] Transport: `ClientWebSocket` de .NET (o el equivalente Unity/browser) contra `wss://<proxy-host>/ws`; un mensaje binario = un envelope.
+- [ ] El cliente web usa el contrato TypeScript commiteado (`proto/v1/gen/es/v1/world_pb.ts`, protobuf-es 2.16.0); no hay bindings C# para el web client.
+- [ ] Sin bind UDP ni datagramas: `MoveInput`/`Snapshot` viajan por la misma conexión WSS.
 - [ ] Descartá `Snapshot.seq ≤ last-applied` y contestá `Ack` a los frames con flag `needs-ack`.
 - [ ] **Tratá `pos.y`/`spawnPos.y` como altura autoritativa**: no la generes, no la mandes, no la corrijas. La cámara la posiciona el cliente sobre el estado autoritativo.
 - [ ] **Terreno**: si el server corre con un mapa (`-map`), el cliente no necesita el heightmap — la altura ya viaja en los snapshots. El heightmap es solo para el pipeline de autoría (ver `HEIGHTMAP.md`).
