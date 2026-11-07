@@ -9,6 +9,7 @@ package rooms
 import (
 	"errors"
 	"sync"
+	"time"
 )
 
 // Capacity is the fixed number of active players per room (design: 2).
@@ -38,6 +39,7 @@ type Reservation struct {
 // mutex so capacity accounting is atomic under concurrency.
 type Manager struct {
 	mu    sync.Mutex
+	clock Clock
 	rooms map[RoomID]*room
 	res   map[uint64]*reservation
 	next  uint64
@@ -55,13 +57,21 @@ func (r *room) slots() int { return r.reserved + r.members }
 
 // reservation is the internal record backing an opaque Reservation token.
 type reservation struct {
-	roomID RoomID
-	member bool // true once committed
+	roomID  RoomID
+	member  bool      // true once committed
+	expires time.Time // lease deadline; ignored once member
 }
 
-// NewManager builds an empty room directory.
+// NewManager builds an empty room directory using the wall clock.
 func NewManager() *Manager {
+	return NewManagerWithClock(systemClock{})
+}
+
+// NewManagerWithClock builds an empty room directory using an injectable
+// clock, for deterministic lease-expiry tests.
+func NewManagerWithClock(clock Clock) *Manager {
 	return &Manager{
+		clock: clock,
 		rooms: make(map[RoomID]*room),
 		res:   make(map[uint64]*reservation),
 	}
@@ -85,7 +95,7 @@ func (m *Manager) Reserve(roomID RoomID) (Reservation, error) {
 	r.reserved++
 	m.next++
 	tok := m.next
-	m.res[tok] = &reservation{roomID: roomID}
+	m.res[tok] = &reservation{roomID: roomID, expires: m.clock.Now().Add(Lease)}
 	return Reservation{token: tok}, nil
 }
 
