@@ -262,3 +262,11 @@ A diferencia de las violaciones de estado de arriba, los rechazos de `CreateChar
 - [ ] **Terreno**: si el server corre con un mapa (`-map`), el cliente no necesita el heightmap — la altura ya viaja en los snapshots. El heightmap es solo para el pipeline de autoría (ver `HEIGHTMAP.md`).
 - [ ] **Personajes**: la hoja de handoff completa del flujo de personajes está en [`UNITY_CHARACTER_HANDOFF.md`](UNITY_CHARACTER_HANDOFF.md).
 - [ ] Probá contra el server local: `go run ./cmd/server` o `docker compose up`.
+
+---
+
+## 11. Bindings TypeScript (protobuf-es v2)
+
+`proto/v1/gen/es/v1/world_pb.ts` es el contrato completo (ids 1-22), generado con protobuf-es v2.16.0 y commiteado. Regeneralo con `npm ci && make proto-es`; `make proto-es-check` falla ante drift.
+
+Usá `@bufbuild/protobuf` **2.16.0** (fijado en `package.json`/lockfile) e imports sin extensión (v2).

@@ -62,7 +62,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file v1/world.proto.
  */
 export const file_v1_world: GenFile = /*@__PURE__*/
-  fileDesc("Cg52MS93b3JsZC5wcm90bxIGbW1vLnYxIhwKBFZlYzISCQoBeBgBIAEoAhIJCgF6GAIgASgCIicKBFZlYzMSCQoBeBgBIAEoAhIJCgF5GAIgASgCEgkKAXoYAyABKAIidQoLRW50aXR5U3RhdGUSCgoCaWQYASABKAkSGQoDcG9zGAIgASgLMgwubW1vLnYxLlZlYzMSHgoIdmVsb2NpdHkYAyABKAsyDC5tbW8udjEuVmVjMhILCgN5YXcYBCABKAISEgoKdGVtcGxhdGVJZBgFIAEoCSIZCgVIZWxsbxIQCghwcm90b1ZlchgBIAEoBSJECgpTZXJ2ZXJJbmZvEhAKCHByb3RvVmVyGAEgASgFEhAKCHRpY2tSYXRlGAIgASgFEhIKCnNlcnZlclRpbWUYAyABKAMiMQoPVmVyc2lvbk1pc21hdGNoEg4KBm1pblZlchgBIAEoBRIOCgZtYXhWZXIYAiABKAUiMQoLQXV0aFJlcXVlc3QSEAoIdXNlcm5hbWUYASABKAkSEAoIcGFzc3dvcmQYAiABKAkidAoMQXV0aFJlc3BvbnNlEgoKAm9rGAEgASgIEhAKCHBsYXllcklkGAIgASgJEh4KCHNwYXduUG9zGAMgASgLMgwubW1vLnYxLlZlYzMSEAoIdWRwVG9rZW4YBCABKAwSFAoMZXJyb3JNZXNzYWdlGAUgASgJIgwKCkVudGVyV29ybGQiNgoNV29ybGRTbmFwc2hvdBIlCghlbnRpdGllcxgBIAMoCzITLm1tby52MS5FbnRpdHlTdGF0ZSJPCglNb3ZlSW5wdXQSCwoDc2VxGAEgASgFEhkKA2RpchgCIAEoCzIMLm1tby52MS5WZWMyEg0KBXNwZWVkGAMgASgCEgsKA3lhdxgEIAEoAiI+CghTbmFwc2hvdBILCgNzZXEYASABKAUSJQoIZW50aXRpZXMYAiADKAsyEy5tbW8udjEuRW50aXR5U3RhdGUiEgoDQWNrEgsKA3NlcRgBIAEoDSJDCgtTcGF3bkVudGl0eRIQCghlbnRpdHlJZBgBIAEoCRIiCgVzdGF0ZRgCIAEoCzITLm1tby52MS5FbnRpdHlTdGF0ZSIhCg1EZXNwYXduRW50aXR5EhAKCGVudGl0eUlkGAEgASgJIikKBFBpbmcSDQoFbm9uY2UYASABKAQSEgoKY2xpZW50VGltZRgCIAEoAyIpCgRQb25nEg0KBW5vbmNlGAEgASgEEhIKCmNsaWVudFRpbWUYAiABKAMiKAoISm9pblJvb20SDAoEbW9kZRgBIAEoBRIOCgZyb29tSWQYAiABKAkiRwoQSm9pblJvb21SZXNwb25zZRIOCgZyb29tSWQYASABKAkSEAoIY2FwYWNpdHkYAiABKAUSEQoJb2NjdXBhbmN5GAMgASgFQkdaPGdpdGh1Yi5jb20vbHVpc3BsYXRhL21tby1hcGktc2VydmVyL3Byb3RvL3YxL2dlbi9nby92MTttbW92MaoCBk1tby5WMWIGcHJvdG8z");
+  fileDesc("Cg52MS93b3JsZC5wcm90bxIGbW1vLnYxIhwKBFZlYzISCQoBeBgBIAEoAhIJCgF6GAIgASgCIicKBFZlYzMSCQoBeBgBIAEoAhIJCgF5GAIgASgCEgkKAXoYAyABKAIidQoLRW50aXR5U3RhdGUSCgoCaWQYASABKAkSGQoDcG9zGAIgASgLMgwubW1vLnYxLlZlYzMSHgoIdmVsb2NpdHkYAyABKAsyDC5tbW8udjEuVmVjMhILCgN5YXcYBCABKAISEgoKdGVtcGxhdGVJZBgFIAEoCSIZCgVIZWxsbxIQCghwcm90b1ZlchgBIAEoBSJECgpTZXJ2ZXJJbmZvEhAKCHByb3RvVmVyGAEgASgFEhAKCHRpY2tSYXRlGAIgASgFEhIKCnNlcnZlclRpbWUYAyABKAMiMQoPVmVyc2lvbk1pc21hdGNoEg4KBm1pblZlchgBIAEoBRIOCgZtYXhWZXIYAiABKAUiMQoLQXV0aFJlcXVlc3QSEAoIdXNlcm5hbWUYASABKAkSEAoIcGFzc3dvcmQYAiABKAkidAoMQXV0aFJlc3BvbnNlEgoKAm9rGAEgASgIEhAKCHBsYXllcklkGAIgASgJEh4KCHNwYXduUG9zGAMgASgLMgwubW1vLnYxLlZlYzMSEAoIdWRwVG9rZW4YBCABKAwSFAoMZXJyb3JNZXNzYWdlGAUgASgJIgwKCkVudGVyV29ybGQiNgoNV29ybGRTbmFwc2hvdBIlCghlbnRpdGllcxgBIAMoCzITLm1tby52MS5FbnRpdHlTdGF0ZSJPCglNb3ZlSW5wdXQSCwoDc2VxGAEgASgFEhkKA2RpchgCIAEoCzIMLm1tby52MS5WZWMyEg0KBXNwZWVkGAMgASgCEgsKA3lhdxgEIAEoAiI+CghTbmFwc2hvdBILCgNzZXEYASABKAUSJQoIZW50aXRpZXMYAiADKAsyEy5tbW8udjEuRW50aXR5U3RhdGUiEgoDQWNrEgsKA3NlcRgBIAEoDSJDCgtTcGF3bkVudGl0eRIQCghlbnRpdHlJZBgBIAEoCRIiCgVzdGF0ZRgCIAEoCzITLm1tby52MS5FbnRpdHlTdGF0ZSIhCg1EZXNwYXduRW50aXR5EhAKCGVudGl0eUlkGAEgASgJIjwKBVN0YXRzEgoKAmhwGAEgASgCEg0KBXNwZWVkGAIgASgCEgsKA2F0axgDIAEoAhILCgNkZWYYBCABKAIifQoJQ2hhcmFjdGVyEgoKAmlkGAEgASgJEhEKCWFjY291bnRJZBgCIAEoCRIMCgRuYW1lGAMgASgJEhIKCnRlbXBsYXRlSWQYBCABKAkSHAoFc3RhdHMYBSABKAsyDS5tbW8udjEuU3RhdHMSEQoJY3JlYXRlZEF0GAYgASgDIhAKDkxpc3RDaGFyYWN0ZXJzIjYKDUNoYXJhY3Rlckxpc3QSJQoKY2hhcmFjdGVycxgBIAMoCzIRLm1tby52MS5DaGFyYWN0ZXIiMwoPQ3JlYXRlQ2hhcmFjdGVyEhIKCnRlbXBsYXRlSWQYASABKAkSDAoEbmFtZRgCIAEoCSJhChdDcmVhdGVDaGFyYWN0ZXJSZXNwb25zZRIKCgJvaxgBIAEoCBIkCgljaGFyYWN0ZXIYAiABKAsyES5tbW8udjEuQ2hhcmFjdGVyEhQKDGVycm9yTWVzc2FnZRgDIAEoCSImCg9TZWxlY3RDaGFyYWN0ZXISEwoLY2hhcmFjdGVySWQYASABKAkigQEKF1NlbGVjdENoYXJhY3RlclJlc3BvbnNlEgoKAm9rGAEgASgIEiQKCWNoYXJhY3RlchgCIAEoCzIRLm1tby52MS5DaGFyYWN0ZXISHgoIc3Bhd25Qb3MYAyABKAsyDC5tbW8udjEuVmVjMxIUCgxlcnJvck1lc3NhZ2UYBCABKAkiKQoEUGluZxINCgVub25jZRgBIAEoBBISCgpjbGllbnRUaW1lGAIgASgDIikKBFBvbmcSDQoFbm9uY2UYASABKAQSEgoKY2xpZW50VGltZRgCIAEoAyIoCghKb2luUm9vbRIMCgRtb2RlGAEgASgFEg4KBnJvb21JZBgCIAEoCSJHChBKb2luUm9vbVJlc3BvbnNlEg4KBnJvb21JZBgBIAEoCRIQCghjYXBhY2l0eRgCIAEoBRIRCglvY2N1cGFuY3kYAyABKAVCR1o8Z2l0aHViLmNvbS9sdWlzcGxhdGEvbW1vLWFwaS1zZXJ2ZXIvcHJvdG8vdjEvZ2VuL2dvL3YxO21tb3YxqgIGTW1vLlYxYgZwcm90bzM");
 
 /**
  * Vec2 is a 2D vector on the ground plane (x, z). Used for velocity and
@@ -476,6 +476,242 @@ export const DespawnEntitySchema: GenMessage<DespawnEntity> = /*@__PURE__*/
   messageDesc(file_v1_world, 14);
 
 /**
+ * Stats is the numeric character sheet. Shape is data, not hardcoded
+ * values: the server derives Stats from a Template at Create and freezes
+ * them onto the Character. float32 preserves wire fidelity with the Unity
+ * client (C# float).
+ *
+ * @generated from message mmo.v1.Stats
+ */
+export type Stats = Message<"mmo.v1.Stats"> & {
+  /**
+   * @generated from field: float hp = 1;
+   */
+  hp: number;
+
+  /**
+   * @generated from field: float speed = 2;
+   */
+  speed: number;
+
+  /**
+   * @generated from field: float atk = 3;
+   */
+  atk: number;
+
+  /**
+   * @generated from field: float def = 4;
+   */
+  def: number;
+};
+
+/**
+ * Describes the message mmo.v1.Stats.
+ * Use `create(StatsSchema)` to create a new message.
+ */
+export const StatsSchema: GenMessage<Stats> = /*@__PURE__*/
+  messageDesc(file_v1_world, 15);
+
+/**
+ * Character is one owned character of an account. id is the world entity
+ * id once selected; accountId ties it to its owner; stats is the frozen
+ * template snapshot; createdAt is ms since epoch.
+ *
+ * @generated from message mmo.v1.Character
+ */
+export type Character = Message<"mmo.v1.Character"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string accountId = 2;
+   */
+  accountId: string;
+
+  /**
+   * @generated from field: string name = 3;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string templateId = 4;
+   */
+  templateId: string;
+
+  /**
+   * @generated from field: mmo.v1.Stats stats = 5;
+   */
+  stats?: Stats | undefined;
+
+  /**
+   * @generated from field: int64 createdAt = 6;
+   */
+  createdAt: bigint;
+};
+
+/**
+ * Describes the message mmo.v1.Character.
+ * Use `create(CharacterSchema)` to create a new message.
+ */
+export const CharacterSchema: GenMessage<Character> = /*@__PURE__*/
+  messageDesc(file_v1_world, 16);
+
+/**
+ * ListCharacters asks for every character of the authenticated account.
+ * The account comes from the session, so the request carries no fields.
+ *
+ * @generated from message mmo.v1.ListCharacters
+ */
+export type ListCharacters = Message<"mmo.v1.ListCharacters"> & {
+};
+
+/**
+ * Describes the message mmo.v1.ListCharacters.
+ * Use `create(ListCharactersSchema)` to create a new message.
+ */
+export const ListCharactersSchema: GenMessage<ListCharacters> = /*@__PURE__*/
+  messageDesc(file_v1_world, 17);
+
+/**
+ * CharacterList answers ListCharacters. Empty when the account has no
+ * characters (not an error).
+ *
+ * @generated from message mmo.v1.CharacterList
+ */
+export type CharacterList = Message<"mmo.v1.CharacterList"> & {
+  /**
+   * @generated from field: repeated mmo.v1.Character characters = 1;
+   */
+  characters: Character[];
+};
+
+/**
+ * Describes the message mmo.v1.CharacterList.
+ * Use `create(CharacterListSchema)` to create a new message.
+ */
+export const CharacterListSchema: GenMessage<CharacterList> = /*@__PURE__*/
+  messageDesc(file_v1_world, 18);
+
+/**
+ * CreateCharacter creates a character for the account. The server
+ * validates template existence, name (trimmed 3-16, [a-zA-Z0-9_]) and
+ * per-account uniqueness, then freezes the template's baseStats onto the
+ * new Character.
+ *
+ * @generated from message mmo.v1.CreateCharacter
+ */
+export type CreateCharacter = Message<"mmo.v1.CreateCharacter"> & {
+  /**
+   * @generated from field: string templateId = 1;
+   */
+  templateId: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+};
+
+/**
+ * Describes the message mmo.v1.CreateCharacter.
+ * Use `create(CreateCharacterSchema)` to create a new message.
+ */
+export const CreateCharacterSchema: GenMessage<CreateCharacter> = /*@__PURE__*/
+  messageDesc(file_v1_world, 19);
+
+/**
+ * CreateCharacterResponse answers CreateCharacter. On ok=true character
+ * holds the persisted Character (id + stats snapshot); on ok=false
+ * errorMessage explains the rejection and no state is mutated.
+ *
+ * @generated from message mmo.v1.CreateCharacterResponse
+ */
+export type CreateCharacterResponse = Message<"mmo.v1.CreateCharacterResponse"> & {
+  /**
+   * @generated from field: bool ok = 1;
+   */
+  ok: boolean;
+
+  /**
+   * @generated from field: mmo.v1.Character character = 2;
+   */
+  character?: Character | undefined;
+
+  /**
+   * @generated from field: string errorMessage = 3;
+   */
+  errorMessage: string;
+};
+
+/**
+ * Describes the message mmo.v1.CreateCharacterResponse.
+ * Use `create(CreateCharacterResponseSchema)` to create a new message.
+ */
+export const CreateCharacterResponseSchema: GenMessage<CreateCharacterResponse> = /*@__PURE__*/
+  messageDesc(file_v1_world, 20);
+
+/**
+ * SelectCharacter activates one of the account's characters as the
+ * session's world entity. Only valid in the `selecting` phase for a
+ * character owned by the account.
+ *
+ * @generated from message mmo.v1.SelectCharacter
+ */
+export type SelectCharacter = Message<"mmo.v1.SelectCharacter"> & {
+  /**
+   * @generated from field: string characterId = 1;
+   */
+  characterId: string;
+};
+
+/**
+ * Describes the message mmo.v1.SelectCharacter.
+ * Use `create(SelectCharacterSchema)` to create a new message.
+ */
+export const SelectCharacterSchema: GenMessage<SelectCharacter> = /*@__PURE__*/
+  messageDesc(file_v1_world, 21);
+
+/**
+ * SelectCharacterResponse answers SelectCharacter. On ok=true character
+ * carries the selected Character (stats + templateId) and spawnPos is the
+ * resolved spawn point; the session consumes both when EnterWorld is
+ * received. On ok=false errorMessage explains the rejection and the
+ * previously active character (if any) is unchanged.
+ *
+ * @generated from message mmo.v1.SelectCharacterResponse
+ */
+export type SelectCharacterResponse = Message<"mmo.v1.SelectCharacterResponse"> & {
+  /**
+   * @generated from field: bool ok = 1;
+   */
+  ok: boolean;
+
+  /**
+   * @generated from field: mmo.v1.Character character = 2;
+   */
+  character?: Character | undefined;
+
+  /**
+   * @generated from field: mmo.v1.Vec3 spawnPos = 3;
+   */
+  spawnPos?: Vec3 | undefined;
+
+  /**
+   * @generated from field: string errorMessage = 4;
+   */
+  errorMessage: string;
+};
+
+/**
+ * Describes the message mmo.v1.SelectCharacterResponse.
+ * Use `create(SelectCharacterResponseSchema)` to create a new message.
+ */
+export const SelectCharacterResponseSchema: GenMessage<SelectCharacterResponse> = /*@__PURE__*/
+  messageDesc(file_v1_world, 22);
+
+/**
  * ─── Latency probe (additive, type ids 19-20) ───────────────────────
  * 
  * Ping echoes nonce + clientTime (ms since epoch) so the client computes
@@ -501,7 +737,7 @@ export type Ping = Message<"mmo.v1.Ping"> & {
  * Use `create(PingSchema)` to create a new message.
  */
 export const PingSchema: GenMessage<Ping> = /*@__PURE__*/
-  messageDesc(file_v1_world, 15);
+  messageDesc(file_v1_world, 23);
 
 /**
  * Pong echoes the Ping fields immediately, outside the 20 Hz tick.
@@ -525,7 +761,7 @@ export type Pong = Message<"mmo.v1.Pong"> & {
  * Use `create(PongSchema)` to create a new message.
  */
 export const PongSchema: GenMessage<Pong> = /*@__PURE__*/
-  messageDesc(file_v1_world, 16);
+  messageDesc(file_v1_world, 24);
 
 /**
  * ─── Room lobby (additive, type ids 21-22) ──────────────────────────
@@ -550,7 +786,7 @@ export type JoinRoom = Message<"mmo.v1.JoinRoom"> & {
  * Use `create(JoinRoomSchema)` to create a new message.
  */
 export const JoinRoomSchema: GenMessage<JoinRoom> = /*@__PURE__*/
-  messageDesc(file_v1_world, 17);
+  messageDesc(file_v1_world, 25);
 
 /**
  * JoinRoomResponse: zero capacity/roomId means nothing was reserved.
@@ -579,5 +815,5 @@ export type JoinRoomResponse = Message<"mmo.v1.JoinRoomResponse"> & {
  * Use `create(JoinRoomResponseSchema)` to create a new message.
  */
 export const JoinRoomResponseSchema: GenMessage<JoinRoomResponse> = /*@__PURE__*/
-  messageDesc(file_v1_world, 18);
+  messageDesc(file_v1_world, 26);
 

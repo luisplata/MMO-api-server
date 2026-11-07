@@ -7,6 +7,7 @@ package protocol
 // creep in unnoticed.
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -137,10 +138,10 @@ func TestNoGobInServerMessagePaths(t *testing.T) {
 }
 
 // TestGeneratedTypeScriptContract pins the committed ES bindings for the
-// staged web-client surface: the protoc-gen-es v2 preamble and runtime import
-// are fixed, the foundation/session (P19b) and simulation/world-state (P19c)
-// messages are exported as both a type and a schema, and the deferred
-// private-room symbols stay absent. The scan needs no Node toolchain.
+// public web-client surface: the protoc-gen-es v2 preamble and runtime import
+// are fixed, every contract message (foundation/session, simulation/world-state
+// and character management) is exported as both a type and a schema, and the
+// deferred private-room symbols stay absent. The scan needs no Node toolchain.
 func TestGeneratedTypeScriptContract(t *testing.T) {
 	root := repoRoot(t)
 	path := filepath.Join(root, "proto", "v1", "gen", "es", "v1", "world_pb.ts")
@@ -170,6 +171,9 @@ func TestGeneratedTypeScriptContract(t *testing.T) {
 		"AuthRequest", "AuthResponse", "EnterWorld",
 		"EntityState", "WorldSnapshot", "MoveInput", "Snapshot", "Ack",
 		"SpawnEntity", "DespawnEntity",
+		"Stats", "Character", "ListCharacters", "CharacterList",
+		"CreateCharacter", "CreateCharacterResponse",
+		"SelectCharacter", "SelectCharacterResponse",
 		"Ping", "Pong", "JoinRoom", "JoinRoomResponse",
 	}
 	for _, name := range required {
@@ -190,6 +194,67 @@ func TestGeneratedTypeScriptContract(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestGeneratedTypeScriptContractIsComplete covers the final P19d contract:
+// every world.proto message is exported, the generator inputs stay pinned and
+// unfiltered, and the unallocated private-room id 23 stays absent.
+func TestGeneratedTypeScriptContractIsComplete(t *testing.T) {
+	root := repoRoot(t)
+	protoSrc := readRepoFile(t, root, "proto/v1/world.proto")
+	tsBody := stripTSComments(readRepoFile(t, root, "proto/v1/gen/es/v1/world_pb.ts"))
+	for _, name := range protoMessageNames(protoSrc) {
+		if !strings.Contains(tsBody, "export type "+name+" =") || !strings.Contains(tsBody, "export const "+name+"Schema") {
+			t.Errorf("world.proto message %s is not exported", name)
+		}
+	}
+	if got, want := strings.Count(tsBody, "export type "), len(protoMessageNames(protoSrc)); got != want {
+		t.Errorf("world_pb.ts exports %d types, want the %d-message contract", got, want)
+	}
+	assertTokens(t, root, "package.json", `"@bufbuild/protobuf": "2.16.0"`, `"@bufbuild/protoc-gen-es": "2.16.0"`)
+	assertTokens(t, root, "buf.gen.es.yaml", "version: v2", "local: protoc-gen-es", "out: proto/v1/gen/es", "opt: target=ts")
+	assertTokens(t, root, "Makefile", "proto-es:", "buf.gen.es.yaml", "git diff --exit-code")
+	if regexp.MustCompile(`(?m)^\s+types:`).MatchString(readRepoFile(t, root, "buf.gen.es.yaml")) {
+		t.Errorf("buf.gen.es.yaml must not filter types")
+	}
+
+	for _, row := range protoTypeIDTable(t) {
+		if row.id > 22 {
+			t.Errorf("world.proto allocates id %d above 22 (%s)", row.id, row.name)
+		}
+	}
+	if _, err := NewWorldRegistry().NewMessage(23); !errors.Is(err, ErrUnknownType) {
+		t.Errorf("id 23 must stay unregistered, got %v", err)
+	}
+}
+
+var protoMessagePattern = regexp.MustCompile(`(?m)^message (\w+) \{`)
+
+func protoMessageNames(src string) []string {
+	var names []string
+	for _, m := range protoMessagePattern.FindAllStringSubmatch(src, -1) {
+		names = append(names, m[1])
+	}
+	return names
+}
+
+func assertTokens(t *testing.T, root, file string, want ...string) {
+	t.Helper()
+	src := readRepoFile(t, root, file)
+	for _, token := range want {
+		if !strings.Contains(src, token) {
+			t.Errorf("%s missing generation token %q", file, token)
+		}
+	}
+}
+
+func readRepoFile(t *testing.T, root, rel string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatalf("read %s: %v", rel, err)
+	}
+	return string(data)
 }
 
 // TestTSSymbolGuardIgnoresComments triangulates the comment-safe scanner used
