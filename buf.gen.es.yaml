@@ -4,15 +4,23 @@
 # consumers never need buf, protoc, or Node. Regenerate with:
 #   npm ci && make proto-es
 #
-# P19a stages only the latency + room-lobby messages (ids 19-22). The
-# temporary `types` filter is removed in P19d, when this file becomes the
-# complete world contract.
+# P19b adds the foundation/session surface needed for the WSS handshake,
+# authentication and character selection. The temporary `types` filter is
+# removed in P19d, when this file becomes the complete world contract.
 version: v2
 plugins:
   - local: protoc-gen-es
     out: proto/v1/gen/es
     opt: target=ts
     types:
+      - mmo.v1.Vec2
+      - mmo.v1.Vec3
+      - mmo.v1.Hello
+      - mmo.v1.ServerInfo
+      - mmo.v1.VersionMismatch
+      - mmo.v1.AuthRequest
+      - mmo.v1.AuthResponse
+      - mmo.v1.EnterWorld
       - mmo.v1.Ping
       - mmo.v1.Pong
       - mmo.v1.JoinRoom

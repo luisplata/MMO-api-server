@@ -62,7 +62,221 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file v1/world.proto.
  */
 export const file_v1_world: GenFile = /*@__PURE__*/
-  fileDesc("Cg52MS93b3JsZC5wcm90bxIGbW1vLnYxIikKBFBpbmcSDQoFbm9uY2UYASABKAQSEgoKY2xpZW50VGltZRgCIAEoAyIpCgRQb25nEg0KBW5vbmNlGAEgASgEEhIKCmNsaWVudFRpbWUYAiABKAMiKAoISm9pblJvb20SDAoEbW9kZRgBIAEoBRIOCgZyb29tSWQYAiABKAkiRwoQSm9pblJvb21SZXNwb25zZRIOCgZyb29tSWQYASABKAkSEAoIY2FwYWNpdHkYAiABKAUSEQoJb2NjdXBhbmN5GAMgASgFQkdaPGdpdGh1Yi5jb20vbHVpc3BsYXRhL21tby1hcGktc2VydmVyL3Byb3RvL3YxL2dlbi9nby92MTttbW92MaoCBk1tby5WMWIGcHJvdG8z");
+  fileDesc("Cg52MS93b3JsZC5wcm90bxIGbW1vLnYxIhwKBFZlYzISCQoBeBgBIAEoAhIJCgF6GAIgASgCIicKBFZlYzMSCQoBeBgBIAEoAhIJCgF5GAIgASgCEgkKAXoYAyABKAIiGQoFSGVsbG8SEAoIcHJvdG9WZXIYASABKAUiRAoKU2VydmVySW5mbxIQCghwcm90b1ZlchgBIAEoBRIQCgh0aWNrUmF0ZRgCIAEoBRISCgpzZXJ2ZXJUaW1lGAMgASgDIjEKD1ZlcnNpb25NaXNtYXRjaBIOCgZtaW5WZXIYASABKAUSDgoGbWF4VmVyGAIgASgFIjEKC0F1dGhSZXF1ZXN0EhAKCHVzZXJuYW1lGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJInQKDEF1dGhSZXNwb25zZRIKCgJvaxgBIAEoCBIQCghwbGF5ZXJJZBgCIAEoCRIeCghzcGF3blBvcxgDIAEoCzIMLm1tby52MS5WZWMzEhAKCHVkcFRva2VuGAQgASgMEhQKDGVycm9yTWVzc2FnZRgFIAEoCSIMCgpFbnRlcldvcmxkIikKBFBpbmcSDQoFbm9uY2UYASABKAQSEgoKY2xpZW50VGltZRgCIAEoAyIpCgRQb25nEg0KBW5vbmNlGAEgASgEEhIKCmNsaWVudFRpbWUYAiABKAMiKAoISm9pblJvb20SDAoEbW9kZRgBIAEoBRIOCgZyb29tSWQYAiABKAkiRwoQSm9pblJvb21SZXNwb25zZRIOCgZyb29tSWQYASABKAkSEAoIY2FwYWNpdHkYAiABKAUSEQoJb2NjdXBhbmN5GAMgASgFQkdaPGdpdGh1Yi5jb20vbHVpc3BsYXRhL21tby1hcGktc2VydmVyL3Byb3RvL3YxL2dlbi9nby92MTttbW92MaoCBk1tby5WMWIGcHJvdG8z");
+
+/**
+ * Vec2 is a 2D vector on the ground plane (x, z). Used for velocity and
+ * MoveInput.dir, which never carry height.
+ *
+ * @generated from message mmo.v1.Vec2
+ */
+export type Vec2 = Message<"mmo.v1.Vec2"> & {
+  /**
+   * @generated from field: float x = 1;
+   */
+  x: number;
+
+  /**
+   * @generated from field: float z = 2;
+   */
+  z: number;
+};
+
+/**
+ * Describes the message mmo.v1.Vec2.
+ * Use `create(Vec2Schema)` to create a new message.
+ */
+export const Vec2Schema: GenMessage<Vec2> = /*@__PURE__*/
+  messageDesc(file_v1_world, 0);
+
+/**
+ * Vec3 is a 3D vector. Position and spawn use Vec3 in v2: y is the
+ * server-derived terrain height (world Y = heightmap sample x y_scale).
+ * The client never sends y — it is authoritative from the server.
+ *
+ * @generated from message mmo.v1.Vec3
+ */
+export type Vec3 = Message<"mmo.v1.Vec3"> & {
+  /**
+   * @generated from field: float x = 1;
+   */
+  x: number;
+
+  /**
+   * @generated from field: float y = 2;
+   */
+  y: number;
+
+  /**
+   * @generated from field: float z = 3;
+   */
+  z: number;
+};
+
+/**
+ * Describes the message mmo.v1.Vec3.
+ * Use `create(Vec3Schema)` to create a new message.
+ */
+export const Vec3Schema: GenMessage<Vec3> = /*@__PURE__*/
+  messageDesc(file_v1_world, 1);
+
+/**
+ * Hello opens a TCP session and announces the client's protocol major
+ * version for negotiation.
+ *
+ * @generated from message mmo.v1.Hello
+ */
+export type Hello = Message<"mmo.v1.Hello"> & {
+  /**
+   * @generated from field: int32 protoVer = 1;
+   */
+  protoVer: number;
+};
+
+/**
+ * Describes the message mmo.v1.Hello.
+ * Use `create(HelloSchema)` to create a new message.
+ */
+export const HelloSchema: GenMessage<Hello> = /*@__PURE__*/
+  messageDesc(file_v1_world, 2);
+
+/**
+ * ServerInfo answers Hello with the negotiated parameters: the
+ * server's protocol version, the simulation tick rate, and the server
+ * clock (ms since epoch) for client time-sync.
+ *
+ * @generated from message mmo.v1.ServerInfo
+ */
+export type ServerInfo = Message<"mmo.v1.ServerInfo"> & {
+  /**
+   * @generated from field: int32 protoVer = 1;
+   */
+  protoVer: number;
+
+  /**
+   * @generated from field: int32 tickRate = 2;
+   */
+  tickRate: number;
+
+  /**
+   * @generated from field: int64 serverTime = 3;
+   */
+  serverTime: bigint;
+};
+
+/**
+ * Describes the message mmo.v1.ServerInfo.
+ * Use `create(ServerInfoSchema)` to create a new message.
+ */
+export const ServerInfoSchema: GenMessage<ServerInfo> = /*@__PURE__*/
+  messageDesc(file_v1_world, 3);
+
+/**
+ * VersionMismatch is sent when the client version is outside the
+ * server's supported range; the server then closes the connection.
+ *
+ * @generated from message mmo.v1.VersionMismatch
+ */
+export type VersionMismatch = Message<"mmo.v1.VersionMismatch"> & {
+  /**
+   * @generated from field: int32 minVer = 1;
+   */
+  minVer: number;
+
+  /**
+   * @generated from field: int32 maxVer = 2;
+   */
+  maxVer: number;
+};
+
+/**
+ * Describes the message mmo.v1.VersionMismatch.
+ * Use `create(VersionMismatchSchema)` to create a new message.
+ */
+export const VersionMismatchSchema: GenMessage<VersionMismatch> = /*@__PURE__*/
+  messageDesc(file_v1_world, 4);
+
+/**
+ * AuthRequest carries the client's credentials.
+ *
+ * @generated from message mmo.v1.AuthRequest
+ */
+export type AuthRequest = Message<"mmo.v1.AuthRequest"> & {
+  /**
+   * @generated from field: string username = 1;
+   */
+  username: string;
+
+  /**
+   * @generated from field: string password = 2;
+   */
+  password: string;
+};
+
+/**
+ * Describes the message mmo.v1.AuthRequest.
+ * Use `create(AuthRequestSchema)` to create a new message.
+ */
+export const AuthRequestSchema: GenMessage<AuthRequest> = /*@__PURE__*/
+  messageDesc(file_v1_world, 5);
+
+/**
+ * AuthResponse answers AuthRequest. On success ok=true and the server
+ * provides the player id, spawn position (Vec3 — spawnPos.y is the
+ * terrain height at the spawn point), and a fresh UDP bind token
+ * carried by the first UDP packet. On failure ok=false with an error
+ * message and the session is closed.
+ *
+ * @generated from message mmo.v1.AuthResponse
+ */
+export type AuthResponse = Message<"mmo.v1.AuthResponse"> & {
+  /**
+   * @generated from field: bool ok = 1;
+   */
+  ok: boolean;
+
+  /**
+   * @generated from field: string playerId = 2;
+   */
+  playerId: string;
+
+  /**
+   * @generated from field: mmo.v1.Vec3 spawnPos = 3;
+   */
+  spawnPos?: Vec3 | undefined;
+
+  /**
+   * @generated from field: bytes udpToken = 4;
+   */
+  udpToken: Uint8Array;
+
+  /**
+   * @generated from field: string errorMessage = 5;
+   */
+  errorMessage: string;
+};
+
+/**
+ * Describes the message mmo.v1.AuthResponse.
+ * Use `create(AuthResponseSchema)` to create a new message.
+ */
+export const AuthResponseSchema: GenMessage<AuthResponse> = /*@__PURE__*/
+  messageDesc(file_v1_world, 6);
+
+/**
+ * EnterWorld acknowledges readiness for the initial world state.
+ *
+ * @generated from message mmo.v1.EnterWorld
+ */
+export type EnterWorld = Message<"mmo.v1.EnterWorld"> & {
+};
+
+/**
+ * Describes the message mmo.v1.EnterWorld.
+ * Use `create(EnterWorldSchema)` to create a new message.
+ */
+export const EnterWorldSchema: GenMessage<EnterWorld> = /*@__PURE__*/
+  messageDesc(file_v1_world, 7);
 
 /**
  * ─── Latency probe (additive, type ids 19-20) ───────────────────────
@@ -90,7 +304,7 @@ export type Ping = Message<"mmo.v1.Ping"> & {
  * Use `create(PingSchema)` to create a new message.
  */
 export const PingSchema: GenMessage<Ping> = /*@__PURE__*/
-  messageDesc(file_v1_world, 0);
+  messageDesc(file_v1_world, 8);
 
 /**
  * Pong echoes the Ping fields immediately, outside the 20 Hz tick.
@@ -114,7 +328,7 @@ export type Pong = Message<"mmo.v1.Pong"> & {
  * Use `create(PongSchema)` to create a new message.
  */
 export const PongSchema: GenMessage<Pong> = /*@__PURE__*/
-  messageDesc(file_v1_world, 1);
+  messageDesc(file_v1_world, 9);
 
 /**
  * ─── Room lobby (additive, type ids 21-22) ──────────────────────────
@@ -139,7 +353,7 @@ export type JoinRoom = Message<"mmo.v1.JoinRoom"> & {
  * Use `create(JoinRoomSchema)` to create a new message.
  */
 export const JoinRoomSchema: GenMessage<JoinRoom> = /*@__PURE__*/
-  messageDesc(file_v1_world, 2);
+  messageDesc(file_v1_world, 10);
 
 /**
  * JoinRoomResponse: zero capacity/roomId means nothing was reserved.
@@ -168,5 +382,5 @@ export type JoinRoomResponse = Message<"mmo.v1.JoinRoomResponse"> & {
  * Use `create(JoinRoomResponseSchema)` to create a new message.
  */
 export const JoinRoomResponseSchema: GenMessage<JoinRoomResponse> = /*@__PURE__*/
-  messageDesc(file_v1_world, 3);
+  messageDesc(file_v1_world, 11);
 
