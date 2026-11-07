@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/luisplata/mmo-api-server/internal/game"
+	"github.com/luisplata/mmo-api-server/internal/observability"
 	"github.com/luisplata/mmo-api-server/internal/server"
 	"github.com/luisplata/mmo-api-server/internal/world"
 )
@@ -28,6 +29,7 @@ func main() {
 	mapFile := flag.String("map", "", "canonical <name>.heightmap to load (with its <name>.manifest sidecar); empty = embedded hills fixture")
 	templatesFile := flag.String("templates", "data/templates.json", "character-template catalog JSON loaded at boot")
 	charactersFile := flag.String("characters", "data/characters.json", "character store JSON loaded at boot")
+	logPayloads := flag.Bool("log-payloads", false, "log decoded allowlisted message payloads (dev only; credentials are always redacted)")
 	flag.Parse()
 
 	// Boot the map (design D7, spec WTM-4/WTM-5): a -map override loads
@@ -63,6 +65,7 @@ func main() {
 		HandshakeTimeout: 10 * time.Second,
 		Templates:        repos.Templates,
 		Characters:       repos.Characters,
+		Logger:           observability.NewLogger(os.Stdout, *logPayloads, time.Now),
 	})
 	if err != nil {
 		log.Fatalf("server: %v", err)

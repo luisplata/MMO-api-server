@@ -66,6 +66,8 @@ func (s *Server) runSim(ctx context.Context, wake <-chan time.Time) error {
 			}
 			last = t
 			s.fanoutInterest()
+			// Snapshot aggregate runs on the goroutine that produced them.
+			s.log.SnapshotTick(t)
 		}
 	}
 }

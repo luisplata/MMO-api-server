@@ -29,5 +29,6 @@ func (s *Server) SendSnapshot(playerID string, snap *mmov1.Snapshot) error {
 	// Non-blocking enqueue: the sink coalesces snapshots (last-wins) and
 	// its writer goroutine performs the socket write.
 	p.sink.Realtime(frame)
+	s.log.Snapshot()
 	return nil
 }

@@ -13,15 +13,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/luisplata/mmo-api-server/internal/character"
 	"github.com/luisplata/mmo-api-server/internal/game"
 	"github.com/luisplata/mmo-api-server/internal/network"
+	"github.com/luisplata/mmo-api-server/internal/observability"
 	"github.com/luisplata/mmo-api-server/internal/protocol"
 	"github.com/luisplata/mmo-api-server/internal/rooms"
 	"github.com/luisplata/mmo-api-server/internal/session"
@@ -71,6 +74,8 @@ type Config struct {
 	// D4). Optional; when nil the server builds a default resolver from
 	// SpawnX/SpawnZ + Heights.
 	Spawn session.SpawnResolver
+	// Logger receives redacted structured telemetry (P18); nil discards it.
+	Logger *observability.Logger
 }
 
 // player ties one authenticated session to its wire resources: the
@@ -118,6 +123,10 @@ type Server struct {
 	// entry) and its room-owner goroutine — one ticker stepping all rooms.
 	runner *roomRunner
 
+	// log is the telemetry sink; sessions is the stable session-id sequence.
+	log      *observability.Logger
+	sessions atomic.Uint64
+
 	wsOrigins []string
 
 	wg     sync.WaitGroup
@@ -146,6 +155,9 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Characters == nil {
 		return nil, errors.New("server: character repository is required")
 	}
+	if cfg.Logger == nil {
+		cfg.Logger = observability.NewLogger(io.Discard, false, time.Now)
+	}
 	srv := &Server{
 		cfg:        cfg,
 		reg:        protocol.NewWorldRegistry(),
@@ -155,6 +167,7 @@ func New(cfg Config) (*Server, error) {
 		rooms:      rooms.NewManager(),
 		players:    make(map[string]*player),
 		charRooms:  make(map[string]rooms.RoomID),
+		log:        cfg.Logger,
 		wsOrigins:  cfg.WSSOrigins,
 	}
 	if cfg.Spawn == nil {
@@ -237,7 +250,11 @@ func (s *Server) Run(ctx context.Context) error {
 // frame, network failure) or session protocol error the connection is
 // cleaned up.
 func (s *Server) serveConn(ctx context.Context, src network.FrameSource, tr network.Transport, sink network.Sink) {
-	sess, err := session.NewSession(s.reg, tr, session.Config{
+	cl := &connLogger{tr: tr, sink: sink, srv: s, id: fmt.Sprintf("sess-%d", s.sessions.Add(1))}
+	if sink != nil {
+		sink = cl
+	}
+	sess, err := session.NewSession(s.reg, cl, session.Config{
 		MinProtoVer:      s.cfg.MinProtoVer,
 		MaxProtoVer:      s.cfg.MaxProtoVer,
 		TickRate:         s.cfg.TickRate,
@@ -255,6 +272,7 @@ func (s *Server) serveConn(ctx context.Context, src network.FrameSource, tr netw
 		}
 		return
 	}
+	cl.sess = sess
 	defer s.cleanupConn(ctx, sess)
 
 	for {
@@ -268,12 +286,14 @@ func (s *Server) serveConn(ctx context.Context, src network.FrameSource, tr netw
 		// frame with a supported envelope version may take this shortcut;
 		// anything else falls through so the session applies the same
 		// VersionMismatch + close rule as a lifecycle frame
-		// (docs/PROTOCOL.md §9).
+		// (docs/PROTOCOL.md §9). MoveInput is realtime, not telemetry.
 		if mi, version, ok := s.decodeMoveInput(frame); ok && s.versionSupported(version) {
 			s.queueMoveInput(sess, mi)
 			continue
 		}
-		if err := sess.HandleTCP(frame); err != nil {
+		handleErr := sess.HandleTCP(frame)
+		cl.logFrame(frame, observability.Inbound)
+		if handleErr != nil {
 			return // protocol violation — the session already closed itself
 		}
 		cid := sess.ActiveCharacterID()
