@@ -21,3 +21,6 @@ Thumbs.db
 
 # Local scratch (never committed)
 /tmp/
+
+# Node toolchain (exact pins live in package.json/package-lock.json)
+node_modules/

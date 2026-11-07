@@ -1,0 +1,19 @@
+# TypeScript (ES) codegen template — protobuf-es v2.16.0.
+#
+# The generated output under proto/v1/gen/es is COMMITTED, so browser
+# consumers never need buf, protoc, or Node. Regenerate with:
+#   npm ci && make proto-es
+#
+# P19a stages only the latency + room-lobby messages (ids 19-22). The
+# temporary `types` filter is removed in P19d, when this file becomes the
+# complete world contract.
+version: v2
+plugins:
+  - local: protoc-gen-es
+    out: proto/v1/gen/es
+    opt: target=ts
+    types:
+      - mmo.v1.Ping
+      - mmo.v1.Pong
+      - mmo.v1.JoinRoom
+      - mmo.v1.JoinRoomResponse

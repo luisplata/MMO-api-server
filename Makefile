@@ -4,11 +4,13 @@
 #   protoc            v35.1       (protocolbuffers/protobuf)
 #   protoc-gen-go     v1.36.11    (google.golang.org/protobuf)
 #   buf               v1.72.0     (bufbuild/buf) — C# via remote plugin buf.build/protocolbuffers/csharp:v35.1
+#   protoc-gen-es     v2.16.0     (@bufbuild/protoc-gen-es, installed by npm ci)
 #
 # Install on Windows:
 #   protoc:        download protoc-35.1-win64.zip from the protobuf releases page, add bin/ to PATH
 #   protoc-gen-go: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
 #   buf:           go install github.com/bufbuild/buf/cmd/buf@v1.72.0
+#   protoc-gen-es: npm ci (exact @bufbuild/protobuf + @bufbuild/protoc-gen-es 2.16.0)
 #
 # The generated output under proto/v1/gen/ is COMMITTED: the Unity dev
 # never needs protoc, buf, or any protobuf tooling to consume the client.
@@ -18,14 +20,15 @@ BUF           ?= buf
 PROTO_DIR     := proto
 GO_OUT        := proto/v1/gen/go
 TESTFIX_DIR   := internal/protocol/testfixture
+NODE_BIN      := node_modules/.bin
 
-.PHONY: proto proto-go proto-csharp test build vet fmt tidy all
+.PHONY: proto proto-go proto-csharp proto-es proto-es-check test build vet fmt tidy all
 
 ## all: regenerate, tidy, format, vet, build, test
 all: proto tidy fmt vet build test
 
-## proto: regenerate both committed Go and C# bindings from the .proto contract
-proto: proto-go proto-csharp
+## proto: regenerate the committed Go, C# and TypeScript bindings
+proto: proto-go proto-csharp proto-es
 
 ## proto-go: regenerate committed Go bindings (protoc v35.1 + protoc-gen-go v1.36.11)
 proto-go:
@@ -43,6 +46,15 @@ proto-go:
 ##  C# compiler needed — the plugin runs on buf.build)
 proto-csharp:
 	$(BUF) generate $(PROTO_DIR)
+
+## proto-es: regenerate the committed TypeScript (ES) bindings.
+## Requires `npm ci` first so node_modules/.bin/protoc-gen-es matches the pins.
+proto-es:
+	PATH="$(CURDIR)/$(NODE_BIN):$$PATH" $(BUF) generate --template buf.gen.es.yaml $(PROTO_DIR)
+
+## proto-es-check: fail if the committed TypeScript output is not reproducible
+proto-es-check: proto-es
+	git diff --exit-code
 
 ## tidy: sync go.mod/go.sum with the generated code's dependencies
 tidy:
