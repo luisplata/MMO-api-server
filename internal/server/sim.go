@@ -1,10 +1,10 @@
 package server
 
-// The sim-owner goroutine: the single owner of every room's
-// non-threadsafe surface (RegisterPlayer, RemovePlayer, Step,
-// TakeInterestEvents, AssembleWorldSnapshot). The conn goroutines
-// communicate with it through room-scoped ops; the UDP loop feeds the
-// default room's concurrency-safe QueueInput directly.
+// The sim-owner goroutine: the single owner of every room's non-threadsafe
+// surface (RegisterPlayer, RemovePlayer, Step, TakeInterestEvents,
+// AssembleWorldSnapshot). The conn goroutines communicate with it through
+// room-scoped ops; the UDP loop feeds the default room's concurrency-safe
+// QueueInput directly.
 
 import (
 	"context"
@@ -92,6 +92,10 @@ func (s *Server) registerAndSnapshot(ctx context.Context, roomID rooms.RoomID, i
 	return frame, err
 }
 
+// fanoutInterest drains every room's pending spawn/despawn events and hands
+// them to each target's outbound Sink (design D4/P3, spec S18.2). It runs on
+// the room-owner goroutine and is room-scoped: an event only ever addresses
+// targets of its own room, and the subject is resolved in that room's sim.
 func (s *Server) fanoutInterest() {
 	for _, rs := range s.runner.allRooms() {
 		for _, ev := range rs.sim.TakeInterestEvents() {

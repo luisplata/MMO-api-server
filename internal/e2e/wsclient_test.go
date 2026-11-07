@@ -1,6 +1,9 @@
 package e2e
 
-// P10 WSS wire client: one connection per player, one envelope per message.
+// P10 WSS wire client: one WebSocket connection per player carries EVERY
+// message — lifecycle and realtime — as exactly one binary message per
+// protocol envelope (design P8). Assertions drain this single stream, so
+// no test here assumes separate reliable/realtime channels.
 
 import (
 	"context"
@@ -19,6 +22,7 @@ import (
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
+// wsMsg is one decoded WebSocket message, or a decode/transport failure.
 type wsMsg struct {
 	msg proto.Message
 	err error
@@ -34,7 +38,8 @@ type wsClient struct {
 	seen map[string]int
 }
 
-// newWSClient dials the WSS endpoint through the TLS front and starts the reader.
+// newWSClient dials the WSS endpoint through the TLS front (the browser's
+// path: TLS terminates at the proxy) and starts the single reader.
 func newWSClient(t *testing.T, reg *protocol.Registry, front *httptest.Server, origin, name string) *wsClient {
 	t.Helper()
 	c, _, err := websocket.Dial(context.Background(), proxyWSSURL(front), &websocket.DialOptions{
@@ -53,7 +58,9 @@ func newWSClient(t *testing.T, reg *protocol.Registry, front *httptest.Server, o
 	return w
 }
 
-// readLoop decodes one envelope per binary message and closes on drop.
+// readLoop decodes exactly one envelope per binary message; text frames
+// and bad envelopes surface as errored messages so the consuming
+// assertion fails loudly. The channel closes when the connection drops.
 func (w *wsClient) readLoop() {
 	defer close(w.ch)
 	for {
@@ -82,16 +89,25 @@ func (w *wsClient) readLoop() {
 	}
 }
 
+// seenTypes snapshots the received-message-type counter for diagnostics.
 func (w *wsClient) seenTypes() map[string]int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return maps.Clone(w.seen)
 }
 
-// send writes msg as one binary message carrying one envelope.
+// send writes msg as one binary message carrying one envelope at the
+// negotiated version.
 func (w *wsClient) send(t *testing.T, msg proto.Message) {
 	t.Helper()
-	frame, err := w.reg.EncodeMessage(msg, protocol.Envelope{Version: protoVersion})
+	w.sendVersion(t, msg, protoVersion)
+}
+
+// sendVersion writes msg with an explicit envelope version. Tests use it
+// to prove the server enforces the negotiated range on every frame kind.
+func (w *wsClient) sendVersion(t *testing.T, msg proto.Message, version uint16) {
+	t.Helper()
+	frame, err := w.reg.EncodeMessage(msg, protocol.Envelope{Version: version})
 	if err != nil {
 		t.Fatalf("%s: encode %T: %v", w.name, msg, err)
 	}
@@ -102,11 +118,29 @@ func (w *wsClient) send(t *testing.T, msg proto.Message) {
 	}
 }
 
+// requireTerminated waits until the server closes the connection (the
+// reader channel closes), failing if it stays open.
+func requireTerminated(t *testing.T, w *wsClient) {
+	t.Helper()
+	timeout := time.After(waitTimeout)
+	for {
+		select {
+		case _, ok := <-w.ch:
+			if !ok {
+				return
+			}
+		case <-timeout:
+			t.Fatalf("%s: ws stayed open; types seen: %v", w.name, w.seenTypes())
+		}
+	}
+}
+
 func (w *wsClient) disconnect() {
 	_ = w.conn.Close(websocket.StatusNormalClosure, "client leaving")
 }
 
-// requireWS waits for the next decoded message of type T, bounded by waitTimeout.
+// requireWS waits for the next decoded message of type T on the single
+// stream, skipping others. Every wait is bounded by waitTimeout.
 func requireWS[T proto.Message](t *testing.T, w *wsClient, what string, opt ...func(T) bool) T {
 	t.Helper()
 	want := func(T) bool { return true }
@@ -132,7 +166,8 @@ func requireWS[T proto.Message](t *testing.T, w *wsClient, what string, opt ...f
 	}
 }
 
-// connectAndAuth drives Hello→ServerInfo, AuthRequest→AuthResponse.
+// connectAndAuth drives Hello→ServerInfo, AuthRequest→AuthResponse and
+// leaves the session in `selecting`.
 func (w *wsClient) connectAndAuth(t *testing.T, username string) *mmov1.AuthResponse {
 	t.Helper()
 	w.send(t, &mmov1.Hello{ProtoVer: protoVersion})
@@ -162,7 +197,8 @@ func (w *wsClient) selectCharacter(t *testing.T, charID string) *mmov1.SelectCha
 	return requireWS[*mmov1.SelectCharacterResponse](t, w, "SelectCharacterResponse")
 }
 
-// enterWorldNow sends EnterWorld and returns the REAL WorldSnapshot.
+// enterWorldNow sends EnterWorld and returns the REAL WorldSnapshot (the
+// session's ack is empty; the server's world snapshot follows).
 func (w *wsClient) enterWorldNow(t *testing.T, charID string) *mmov1.WorldSnapshot {
 	t.Helper()
 	w.send(t, &mmov1.EnterWorld{})
@@ -178,7 +214,8 @@ func (w *wsClient) enterWorldNow(t *testing.T, charID string) *mmov1.WorldSnapsh
 	return ws
 }
 
-// enterWorld creates and selects a character, then enters the world.
+// enterWorld creates and selects a character, then enters the world. It
+// returns the resolved spawn, the character id, and the real snapshot.
 func (w *wsClient) enterWorld(t *testing.T, username, templateID, name string) (*mmov1.Vec3, string, *mmov1.WorldSnapshot) {
 	t.Helper()
 	w.connectAndAuth(t, username)

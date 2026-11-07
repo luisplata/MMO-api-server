@@ -53,7 +53,7 @@ func (s *Server) routeUDP(payload []byte, addr net.Addr) {
 		if isBindToken(payload, sess.UDPToken()) {
 			continue // the bind datagram itself — not an input
 		}
-		if mi, ok := s.decodeMoveInput(payload); ok {
+		if mi, _, ok := s.decodeMoveInput(payload); ok {
 			// The input is queued for the session's world entity (the
 			// selected character id, design D3) in the room that owns it.
 			s.queueMoveInput(sess, mi)
@@ -75,17 +75,20 @@ func (s *Server) queueMoveInput(sess *session.Session, mi *mmov1.MoveInput) {
 	}
 }
 
-// decodeMoveInput decodes a datagram into a MoveInput, or reports false
-// for anything that is not one (garbage, other message types).
-func (s *Server) decodeMoveInput(payload []byte) (*mmov1.MoveInput, bool) {
+// decodeMoveInput decodes a frame into a MoveInput and its envelope
+// version, or reports false for anything that is not one (garbage, other
+// message types). The caller decides whether the version is acceptable:
+// the WSS path must reject an out-of-range version (docs/PROTOCOL.md §9),
+// while the legacy UDP path keeps its pre-existing behavior.
+func (s *Server) decodeMoveInput(payload []byte) (*mmov1.MoveInput, uint16, bool) {
 	env, err := protocol.DecodeEnvelope(payload)
 	if err != nil {
-		return nil, false
+		return nil, 0, false
 	}
 	msg, err := s.reg.DecodeMessage(*env)
 	if err != nil {
-		return nil, false
+		return nil, 0, false
 	}
 	mi, ok := msg.(*mmov1.MoveInput)
-	return mi, ok
+	return mi, env.Version, ok
 }

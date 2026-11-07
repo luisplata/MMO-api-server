@@ -1,8 +1,10 @@
 package server
 
-// The snapshot sink (design PR4b, spec R17): each per-player snapshot is
+// The snapshot sink (design PR4b, spec R17): the simulation's
+// SnapshotSink seam delivers per-player snapshots. Each snapshot is
 // encoded with the player's wire version and handed to the player's
-// bounded Sink (design P2): depth-1 last-wins, written off the tick.
+// bounded Sink (design P2): the Realtime slot is depth-1 last-wins, and
+// the datagram write runs on the sink's writer goroutine, not the tick.
 
 import (
 	"github.com/luisplata/mmo-api-server/internal/protocol"

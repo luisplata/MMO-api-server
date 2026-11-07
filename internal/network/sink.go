@@ -1,17 +1,24 @@
 package network
 
 // Outbound transport seam (design P2): a per-connection Sink absorbs
-// backpressure so no peer can stall the simulation. Reliable frames
-// queue FIFO up to a bound (full → close); Realtime frames coalesce to
-// the latest (depth-1 last-wins). One writer goroutine drains both.
+// backpressure so no peer can stall or crash the simulation. Reliable
+// frames queue FIFO up to a bound (full → close); Realtime frames
+// coalesce to the latest (depth-1 last-wins). One writer goroutine
+// drains both, so writes never run on the sim-owner (tick) goroutine.
 
 import (
 	"errors"
 	"sync"
+	"time"
 )
 
-// ErrSinkFull reports a full reliable queue; the connection closes.
+// ErrSinkFull is returned by Sink.Reliable when the reliable queue is at
+// capacity; the connection is closed as backpressure.
 var ErrSinkFull = errors.New("network: sink reliable queue full")
+
+// closeDrainTimeout bounds how long Close waits for the writer to flush
+// queued reliable frames before forcibly tearing down the connection.
+const closeDrainTimeout = 250 * time.Millisecond
 
 // Sink is the outbound counterpart to FrameSource: all outbound traffic
 // flows through it, keeping the transport swappable with identical
@@ -93,19 +100,22 @@ func (s *connSink) Realtime(frame []byte) {
 	}
 }
 
-// Close stops accepting frames, waits for the writer to stop, then tears
-// down the connection. Idempotent.
+// Close stops accepting frames, gives the writer a bounded window to
+// flush queued reliable frames, then tears down the connection. Idempotent.
 func (s *connSink) Close() error {
 	s.closeOnce.Do(func() {
 		close(s.done)
-		<-s.loopDone
+		select {
+		case <-s.loopDone:
+		case <-time.After(closeDrainTimeout):
+		}
 		s.closeErr = s.closeConn()
 	})
 	return s.closeErr
 }
 
-// closeNow tears down immediately: the backpressure and write-failure
-// paths have nothing worth flushing.
+// closeNow tears down immediately without draining: the backpressure and
+// write-failure paths have nothing worth flushing.
 func (s *connSink) closeNow() {
 	s.closeOnce.Do(func() {
 		close(s.done)
@@ -123,12 +133,15 @@ func (s *connSink) takeRealtime() []byte {
 }
 
 // loop drains the reliable queue and realtime slot until closed or a
-// write fails (which closes the connection).
+// write fails (which closes the connection). On a graceful close it
+// flushes the frames already queued before returning, so a terminal
+// frame (e.g. VersionMismatch) still reaches the peer.
 func (s *connSink) loop() {
 	defer close(s.loopDone)
 	for {
 		select {
 		case <-s.done:
+			s.drainReliable()
 			return
 		case frame := <-s.reliable:
 			if err := s.writeReliable(frame); err != nil {
@@ -144,6 +157,21 @@ func (s *connSink) loop() {
 				s.closeNow()
 				return
 			}
+		}
+	}
+}
+
+// drainReliable writes every frame already queued at close time, in
+// order, stopping at the first failure.
+func (s *connSink) drainReliable() {
+	for {
+		select {
+		case frame := <-s.reliable:
+			if err := s.writeReliable(frame); err != nil {
+				return
+			}
+		default:
+			return
 		}
 	}
 }

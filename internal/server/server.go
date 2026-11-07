@@ -76,18 +76,22 @@ type Config struct {
 }
 
 // player ties one authenticated session to its wire resources: the
-// Transport the session drives and the raw TCP conn used for the
-// server's own reliable writes (the real WorldSnapshot and the
-// spawn/despawn fanout).
+// Transport the session drives, the raw TCP conn (closed directly on
+// shutdown), and the bounded outbound Sink (design P2/P3) that owns all
+// outbound delivery — realtime snapshots via the depth-1 slot and the
+// reliable writes (the real WorldSnapshot and the spawn/despawn fanout)
+// via the bounded queue.
 type player struct {
 	sess *session.Session
 	tr   network.Transport
-	tcp  net.Conn     // nil for WSS players
-	sink network.Sink // design P2: bounded outbound queue
+	tcp  net.Conn // nil for WSS players
+	sink network.Sink
 	// ws routes realtime snapshots over the socket instead of waiting
 	// for a UDP peer bind (WSS has no datagram channel).
 	ws bool
-
+	// roomID is the room that owns this player's character (design:
+	// Routing). It is set when the player enters the world and is the
+	// address used for the scoped leave/despawn.
 	roomID rooms.RoomID
 }
 
@@ -95,8 +99,12 @@ type player struct {
 // The player map is guarded by mu: the UDP loop, the per-conn
 // goroutines and the sim-owner goroutine all touch it.
 type Server struct {
-	cfg  Config
-	reg  *protocol.Registry
+	cfg Config
+	reg *protocol.Registry
+	// sim is the default (legacy) room's simulation — the world the
+	// pre-rooms server ran. It is the same pointer the runner maps under
+	// DefaultRoom; the legacy UDP/fanout paths use it directly (P7 adds
+	// character→room routing).
 	sim  *game.Simulation
 	auth session.Authenticator
 
@@ -115,7 +123,9 @@ type Server struct {
 
 	mu      sync.Mutex
 	players map[string]*player
-	// charRooms is the character -> room ownership index, guarded by mu.
+	// charRooms is the character -> room ownership index (design:
+	// Routing). Guarded by mu together with players, so a character can
+	// never be claimed by two rooms.
 	charRooms map[string]rooms.RoomID
 
 	// runner owns every per-room simulation (sim above is the DefaultRoom
@@ -341,9 +351,13 @@ func (s *Server) serveFrames(ctx context.Context, src network.FrameSource, conn 
 		}
 		// WSS carries lifecycle and realtime on one socket (spec WSS
 		// único): a MoveInput belongs to the room sim, not the lifecycle
-		// state machine, which would reject it as out-of-order.
+		// state machine, which would reject it as out-of-order. Only a
+		// frame with a supported envelope version may take this shortcut;
+		// anything else falls through so the session applies the same
+		// VersionMismatch + close rule as a lifecycle frame
+		// (docs/PROTOCOL.md §9).
 		if realtimeIn {
-			if mi, ok := s.decodeMoveInput(frame); ok {
+			if mi, version, ok := s.decodeMoveInput(frame); ok && s.versionSupported(version) {
 				s.queueMoveInput(sess, mi)
 				continue
 			}
@@ -363,6 +377,12 @@ func (s *Server) serveFrames(ctx context.Context, src network.FrameSource, conn 
 	}
 }
 
+// versionSupported reports whether an envelope version is inside the
+// configured protocol range (docs/PROTOCOL.md §9).
+func (s *Server) versionSupported(v uint16) bool {
+	return int32(v) >= s.cfg.MinProtoVer && int32(v) <= s.cfg.MaxProtoVer
+}
+
 // cleanupConn tears down a session: the session closes its transport
 // (which closes the conn), the world entity (the selected character id,
 // design D3) is removed from the simulation (emitting its despawn event)
@@ -371,7 +391,9 @@ func (s *Server) cleanupConn(ctx context.Context, conn net.Conn, sess *session.S
 	cid := sess.ActiveCharacterID()
 	_ = sess.Close()
 	if cid != "" {
-		// A rejected duplicate tab must not evict the first tab.
+		// Only the session that actually owns the character may tear it
+		// down. A rejected duplicate tab is cleaned up too, and must not
+		// evict the first tab (design: one character, one room).
 		s.mu.Lock()
 		p := s.players[cid]
 		owned := p != nil && p.sess == sess
@@ -381,7 +403,12 @@ func (s *Server) cleanupConn(ctx context.Context, conn net.Conn, sess *session.S
 		}
 		s.mu.Unlock()
 		if owned {
+			// RemovePlayer is a no-op for entities that never joined and
+			// returns ctx.Err during shutdown — both are benign. The leave
+			// is addressed to the character's owning room.
 			_ = s.simDo(ctx, p.roomID, -1, func(sim *game.Simulation) error { return sim.RemovePlayer(cid) })
+			// Stop the player's sink writer goroutine (design P2);
+			// idempotent with the conn close below.
 			if p.sink != nil {
 				_ = p.sink.Close()
 			}
@@ -400,6 +427,10 @@ func (s *Server) isRegistered(pid string) bool {
 	return ok
 }
 
+// roomForSession resolves the room a session enters. Room intent on the
+// wire arrives with the lobby slice (P10); until then every session enters
+// the legacy default room. The seam exists so P10 only changes this
+// resolver, not the routing/ownership code.
 func (s *Server) roomForSession(*session.Session) rooms.RoomID {
 	return DefaultRoom
 }
@@ -410,7 +441,10 @@ func (s *Server) enterWorld(ctx context.Context, conn net.Conn, sess *session.Se
 	return s.enterWorldIn(ctx, conn, sess, tr, s.roomForSession(sess))
 }
 
-// enterWorldIn claims cid -> roomID atomically before registering anything.
+// enterWorldIn registers the authenticated player in roomID. Ownership is
+// claimed atomically before anything is registered, so a character can
+// never appear in two rooms (duplicate tab), and every rollback path
+// releases both the player map and the character index.
 //
 // v1 behavior: the session's handshake already delivered an EMPTY
 // WorldSnapshot as the EnterWorld ack (the session layer has no world
@@ -438,6 +472,8 @@ func (s *Server) enterWorldWithSink(ctx context.Context, conn net.Conn, sess *se
 	if spawn == nil {
 		return fmt.Errorf("server: no character spawn resolved")
 	}
+	// Claim character -> room ownership first: the duplicate tab loses
+	// here, before any room is created or any entity registered.
 	if err := s.bindCharacter(cid, roomID); err != nil {
 		return err
 	}
@@ -476,7 +512,9 @@ func (s *Server) enterWorldWithSink(ctx context.Context, conn net.Conn, sess *se
 	return p.sink.Reliable(frame)
 }
 
-// newConnSink builds the per-connection outbound Sink (design P2).
+// newConnSink builds the per-connection outbound Sink (design P2):
+// reliable writes the TCP conn, realtime delivers a datagram to the
+// bound UDP peer (dropping when unbound), close tears down the conn.
 func (s *Server) newConnSink(conn net.Conn, sess *session.Session) network.Sink {
 	return network.NewSink(
 		func(frame []byte) error { return network.WriteFrame(conn, frame) },

@@ -754,11 +754,12 @@ func TestTwoPlayersSeeEachOtherMoveEndToEnd(t *testing.T) {
 // server instance the gate uses, proving the session layer rejects
 // without closing the session.
 func TestSelectingPhaseRejections(t *testing.T) {
-	tcpAddr, udpAddr, shutdown := startServer(t)
+	wssURL, shutdown := startProxyUpstream(t)
 	t.Cleanup(shutdown)
+	front := startTLSProxy(t, wssURL)
 
 	reg := protocol.NewWorldRegistry()
-	alice := newClient(t, reg, tcpAddr, udpAddr, "alice")
+	alice := newWSClient(t, reg, front, proxyWSOrigin, "alice")
 	alice.connectAndAuth(t, "alice")
 
 	// Bad/invalid template: CreateCharacter with a template id that does
@@ -803,7 +804,7 @@ func TestSelectingPhaseRejections(t *testing.T) {
 	// Wrong-owner Select: bob creates his own character, then alice tries
 	// to select it. The session must answer not-ok and leave alice's
 	// active character unchanged.
-	bob := newClient(t, reg, tcpAddr, udpAddr, "bob")
+	bob := newWSClient(t, reg, front, proxyWSOrigin, "bob")
 	bob.connectAndAuth(t, "bob")
 	bobChar := bob.createCharacter(t, "warrior", "hero")
 	if !bobChar.Ok {

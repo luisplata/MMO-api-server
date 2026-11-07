@@ -1,5 +1,9 @@
 package server
 
+// P7 character-to-room routing tests. They pin the invariants: a character
+// is owned by exactly one room, work resolves through that index, nothing
+// crosses rooms, and unknown character ids are dropped.
+
 import (
 	"context"
 	"io"
@@ -13,6 +17,8 @@ import (
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
 
+// startRoomOwner runs the single room-owner loop so simDo ops are serviced.
+// The wake channel never fires: tests step rooms explicitly.
 func startRoomOwner(t *testing.T, srv *Server) context.Context {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -28,6 +34,8 @@ func startRoomOwner(t *testing.T, srv *Server) context.Context {
 	return ctx
 }
 
+// joinRoom claims cid for roomID (production index) and registers it in the
+// room's simulation through the room-owner op path, returning that room's sim.
 func joinRoom(t *testing.T, srv *Server, ctx context.Context, cid string, roomID rooms.RoomID) *game.Simulation {
 	t.Helper()
 	if err := srv.bindCharacter(cid, roomID); err != nil {
@@ -44,6 +52,8 @@ func joinRoom(t *testing.T, srv *Server, ctx context.Context, cid string, roomID
 	return srv.runner.room(roomID).sim
 }
 
+// discardConn is a net.Conn that drops writes, so enterWorldIn can build its
+// outbound sink without a real socket.
 type discardConn struct{}
 
 func (discardConn) Read([]byte) (int, error)         { return 0, io.EOF }
@@ -138,6 +148,8 @@ func TestRoomIsolation(t *testing.T) {
 	})
 }
 
+// TestDuplicateCharacterRejected pins 7.2: one character lives in at most one
+// room; the second tab is rejected and its teardown never evicts the first.
 func TestDuplicateCharacterRejected(t *testing.T) {
 	srv := newTestServer(t)
 	ctx := startRoomOwner(t, srv)
@@ -153,6 +165,8 @@ func TestDuplicateCharacterRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("second tab with the same character must be rejected")
 	}
+	// serveConn always tears the failed session down; that must be a no-op
+	// for the room/player owned by the first tab.
 	srv.cleanupConn(ctx, conn2, sess2)
 
 	room, ok := srv.roomOfCharacter(testCharID)

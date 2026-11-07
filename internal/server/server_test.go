@@ -146,7 +146,9 @@ func newInWorldSession(t *testing.T, reg *protocol.Registry, username string) *s
 }
 
 // addTestPlayer registers a player in the server map (as enterWorld
-// does) with a mock transport and no TCP conn.
+// does) with a mock transport, no TCP conn, and a bounded outbound Sink
+// (design P2) whose realtime writer delivers over the server's fake
+// PacketConn.
 func addTestPlayer(t *testing.T, srv *Server, id string, sess *session.Session) {
 	t.Helper()
 	if err := srv.bindCharacter(id, DefaultRoom); err != nil {

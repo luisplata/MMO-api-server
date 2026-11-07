@@ -1,5 +1,9 @@
 package server
 
+// Character -> room ownership index (design: Routing). A character lives in
+// at most one room; inputs, fanout and teardown resolve the owning room
+// through this index instead of the legacy default room.
+
 import (
 	"errors"
 	"fmt"
@@ -11,7 +15,10 @@ import (
 // ErrEmptyCharacterID rejects binding a character with no identity.
 var ErrEmptyCharacterID = errors.New("server: empty character id")
 
-// bindCharacter atomically claims cid for roomID (fails if already bound).
+// bindCharacter atomically claims cid for roomID. It fails when the
+// character is already bound, which is how a duplicate tab (same character
+// in two rooms) is rejected. The index is guarded by the server mutex,
+// together with the player map, so ownership cannot be double-claimed.
 func (s *Server) bindCharacter(cid string, roomID rooms.RoomID) error {
 	if cid == "" {
 		return ErrEmptyCharacterID
@@ -25,12 +32,14 @@ func (s *Server) bindCharacter(cid string, roomID rooms.RoomID) error {
 	return nil
 }
 
+// unbindCharacter releases the character's room ownership (idempotent).
 func (s *Server) unbindCharacter(cid string) {
 	s.mu.Lock()
 	delete(s.charRooms, cid)
 	s.mu.Unlock()
 }
 
+// roomOfCharacter returns the room that owns the character.
 func (s *Server) roomOfCharacter(cid string) (rooms.RoomID, bool) {
 	if cid == "" {
 		return "", false
@@ -41,7 +50,9 @@ func (s *Server) roomOfCharacter(cid string) (rooms.RoomID, bool) {
 	return roomID, ok
 }
 
-// simForCharacter resolves the owning room sim; unknown ids report false.
+// simForCharacter resolves the character's owning room simulation. Unknown
+// characters and destroyed rooms report false, so callers drop the work
+// instead of routing it to some other room.
 func (s *Server) simForCharacter(cid string) (*game.Simulation, bool) {
 	roomID, ok := s.roomOfCharacter(cid)
 	if !ok {
