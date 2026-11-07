@@ -77,6 +77,7 @@ type player struct {
 	sess *session.Session
 	tr   network.Transport
 	tcp  net.Conn
+	sink network.Sink // design P2: bounded outbound queue
 }
 
 // Server owns the listeners, the session registry and the simulation.
@@ -208,6 +209,9 @@ func (s *Server) Run(ctx context.Context) error {
 	s.mu.Lock()
 	for _, p := range s.players {
 		_ = p.sess.Close()
+		if p.sink != nil {
+			_ = p.sink.Close()
+		}
 		_ = p.tcp.Close()
 	}
 	s.mu.Unlock()
@@ -302,8 +306,12 @@ func (s *Server) cleanupConn(ctx context.Context, conn net.Conn, sess *session.S
 		// returns ctx.Err during shutdown — both are benign.
 		_ = s.simDo(ctx, func() error { return s.sim.RemovePlayer(cid) })
 		s.mu.Lock()
+		p := s.players[cid]
 		delete(s.players, cid)
 		s.mu.Unlock()
+		if p != nil && p.sink != nil {
+			_ = p.sink.Close()
+		}
 	}
 	_ = conn.Close()
 }
@@ -344,7 +352,8 @@ func (s *Server) enterWorld(ctx context.Context, conn net.Conn, sess *session.Se
 		s.mu.Unlock()
 		return fmt.Errorf("server: character %q already connected", cid)
 	}
-	s.players[cid] = &player{sess: sess, tr: tr, tcp: conn}
+	p := &player{sess: sess, tr: tr, tcp: conn, sink: s.newConnSink(conn, sess)}
+	s.players[cid] = p
 	s.mu.Unlock()
 
 	// Design D4/D5: the entity registers at the character spawn with the
@@ -355,7 +364,23 @@ func (s *Server) enterWorld(ctx context.Context, conn net.Conn, sess *session.Se
 		s.mu.Lock()
 		delete(s.players, cid)
 		s.mu.Unlock()
+		_ = p.sink.Close()
 		return err
 	}
 	return network.WriteFrame(conn, frame)
+}
+
+// newConnSink builds the per-connection outbound Sink (design P2).
+func (s *Server) newConnSink(conn net.Conn, sess *session.Session) network.Sink {
+	return network.NewSink(
+		func(frame []byte) error { return network.WriteFrame(conn, frame) },
+		func(frame []byte) error {
+			peer := sess.UDPPeer()
+			if peer == nil || s.udp == nil {
+				return nil // not bound yet (or legacy UDP disabled) — drop
+			}
+			return network.SendDatagram(s.udp, peer, frame)
+		},
+		func() error { return conn.Close() },
+	)
 }

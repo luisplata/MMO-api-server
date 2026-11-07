@@ -1,17 +1,39 @@
 package server
 
 // Snapshot sink tests: SendSnapshot must deliver a per-player snapshot
-// datagram only when the player is registered AND its session has a UDP
-// peer bound — never for unknown players or unbound sessions. All over a
-// fake PacketConn, so no real sockets are opened.
+// datagram only when the player is registered with a sink AND its session
+// has a UDP peer bound — never for unknown players or unbound sessions.
+// Delivery is async: the player's outbound Sink (design P2) writes the
+// datagram on its own goroutine, so a slow peer cannot stall the
+// sim-owner goroutine. All over a fake PacketConn.
 
 import (
 	"testing"
+	"time"
 
 	"github.com/luisplata/mmo-api-server/internal/protocol"
 	"github.com/luisplata/mmo-api-server/internal/session"
 	mmov1 "github.com/luisplata/mmo-api-server/proto/v1/gen/go/v1"
 )
+
+// waitForWrites blocks until the fake PacketConn has recorded at least n
+// datagrams, returning a snapshot of all recorded writes.
+func waitForWrites(t *testing.T, pc *fakePacketConn, n int) []fakeWrite {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		pc.mu.Lock()
+		writes := append([]fakeWrite(nil), pc.writes...)
+		pc.mu.Unlock()
+		if len(writes) >= n {
+			return writes
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %d datagrams; got %d", n, len(writes))
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
 
 func TestSendSnapshot(t *testing.T) {
 	snap := &mmov1.Snapshot{
@@ -62,14 +84,21 @@ func TestSendSnapshot(t *testing.T) {
 				t.Fatalf("SendSnapshot: %v", err)
 			}
 			pc := srv.udp.(*fakePacketConn)
-			if got := len(pc.writes); got != tc.want {
-				t.Fatalf("datagrams written = %d, want %d", got, tc.want)
-			}
+
 			if tc.want == 0 {
+				// Realtime was never called, so no datagram can appear; a
+				// short settle guards against a spurious async write.
+				time.Sleep(20 * time.Millisecond)
+				pc.mu.Lock()
+				got := len(pc.writes)
+				pc.mu.Unlock()
+				if got != 0 {
+					t.Fatalf("datagrams written = %d, want 0", got)
+				}
 				return
 			}
 
-			w := pc.writes[0]
+			w := waitForWrites(t, pc, 1)[0]
 			if w.addr.String() != "10.0.0.1:9000" {
 				t.Errorf("datagram addr = %v, want the bound peer", w.addr)
 			}

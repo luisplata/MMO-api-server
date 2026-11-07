@@ -147,9 +147,21 @@ func newInWorldSession(t *testing.T, reg *protocol.Registry, username string) *s
 // does) with a mock transport and no TCP conn.
 func addTestPlayer(t *testing.T, srv *Server, id string, sess *session.Session) {
 	t.Helper()
+	sink := network.NewSink(
+		func([]byte) error { return nil },
+		func(frame []byte) error {
+			peer := sess.UDPPeer()
+			if peer == nil {
+				return nil
+			}
+			return network.SendDatagram(srv.udp, peer, frame)
+		},
+		func() error { return nil },
+	)
 	srv.mu.Lock()
-	defer srv.mu.Unlock()
-	srv.players[id] = &player{sess: sess, tr: &mockTransport{}}
+	srv.players[id] = &player{sess: sess, tr: &mockTransport{}, sink: sink}
+	srv.mu.Unlock()
+	t.Cleanup(func() { _ = sink.Close() })
 }
 
 // TestNewServerValidation pins the constructor contract: empty listen
