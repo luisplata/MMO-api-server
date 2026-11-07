@@ -19,6 +19,12 @@ import (
 // (tunable; a SimulationConfig.MaxSpeed of zero selects it).
 const DefaultMaxSpeed float32 = 10
 
+// InputStopAfterTicks is the server-side safety deadline for stale
+// movement input: after this many fixed ticks (10 × 50 ms = 500 ms at
+// 20 Hz) without a processed MoveInput, the authoritative velocity is
+// zeroed before integration. Any processed input renews the deadline.
+const InputStopAfterTicks uint64 = 10
+
 // Vec2 is the internal ground-plane vector (x, z) — the sim's own type
 // so internals never leak the wire shape (contract-vs-impl separation,
 // design D3).
@@ -53,10 +59,12 @@ type Entity struct {
 	Stats stats.Stats
 
 	// LastInputTick/LastInputSeq tag the most recent MoveInput to the
-	// tick that processed it (spec R15) — the hook for future
-	// correction/ack bookkeeping.
+	// tick that processed it (spec R15). inputSeen disambiguates tick 0
+	// (a valid processing tick) from "never received an input": a
+	// LastInputTick of 0 alone must never mark an entity as idle-input.
 	LastInputTick uint64
 	LastInputSeq  int32
+	inputSeen     bool
 }
 
 // ClampSpeed validates a client-requested speed against the server
@@ -104,6 +112,23 @@ func SetVelocityFromInput(e *Entity, in *mmov1.MoveInput, max float32) bool {
 		dir = Vec2{X: in.Dir.X, Z: in.Dir.Z}
 	}
 	return applyMove(e, dir, in.Speed, in.Yaw, max)
+}
+
+// expireStaleInput zeroes the entity's velocity once its most recent
+// processed MoveInput is at least InputStopAfterTicks ticks old. It
+// returns whether the deadline expired on this tick. The tick calls it
+// AFTER the input drain and BEFORE integration, so a stale entity stops
+// on the expiry tick and a renewed one keeps moving.
+//
+// inputSeen makes tick 0 unambiguous: an entity spawned and never given
+// an input has inputSeen == false and is left untouched, while an input
+// processed at tick 0 (LastInputTick == 0) still expires normally.
+func expireStaleInput(e *Entity, tick uint64) bool {
+	if !e.inputSeen || tick < e.LastInputTick || tick-e.LastInputTick < InputStopAfterTicks {
+		return false
+	}
+	e.Velocity = Vec2{}
+	return true
 }
 
 // applyMove is the allocation-free core of SetVelocityFromInput, used

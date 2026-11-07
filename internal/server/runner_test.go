@@ -169,3 +169,57 @@ func TestRoomRunnerPreservesDefaultRoom(t *testing.T) {
 		t.Fatalf("roomCount = %d, want 1 (only the default room)", got)
 	}
 }
+
+// TestRoomRunnerMoveIdleIsolation pins P23 room isolation: the stale-input
+// deadline lives inside each room's own simulation. Expiring room A's input
+// on the shared ticker must never zero room B's renewed velocity.
+func TestRoomRunnerMoveIdleIsolation(t *testing.T) {
+	runner := newTestRunner(t)
+	a, err := runner.ensureRoom("room-a")
+	if err != nil {
+		t.Fatalf("ensureRoom(room-a): %v", err)
+	}
+	b, err := runner.ensureRoom("room-b")
+	if err != nil {
+		t.Fatalf("ensureRoom(room-b): %v", err)
+	}
+	if err := a.sim.RegisterPlayer("a1", game.Vec2{}, "", stats.Stats{}); err != nil {
+		t.Fatalf("register a1: %v", err)
+	}
+	if err := b.sim.RegisterPlayer("b1", game.Vec2{}, "", stats.Stats{}); err != nil {
+		t.Fatalf("register b1: %v", err)
+	}
+	input := func(seq int32) *mmov1.MoveInput {
+		return &mmov1.MoveInput{Seq: seq, Dir: &mmov1.Vec2{X: 1}, Speed: 5}
+	}
+	a.sim.QueueInput("a1", input(1))
+	b.sim.QueueInput("b1", input(2))
+
+	for i := 0; i < 5; i++ { // ticks 0..4
+		if err := runner.stepAll(); err != nil {
+			t.Fatalf("stepAll: %v", err)
+		}
+	}
+	b.sim.QueueInput("b1", input(3)) // tick 5 renewal in room-b only
+	for i := 0; i < 6; i++ {         // ticks 5..10
+		if err := runner.stepAll(); err != nil {
+			t.Fatalf("stepAll: %v", err)
+		}
+	}
+
+	a1, _ := a.sim.Entity("a1")
+	b1, _ := b.sim.Entity("b1")
+	dt := float32(game.TickInterval.Seconds())
+	if !almostEqual(a1.Velocity.X, 0) || !almostEqual(a1.Velocity.Z, 0) {
+		t.Errorf("room-a a1 velocity = %v, want zero after expiry", a1.Velocity)
+	}
+	if !almostEqual(a1.Pos.X, float32(game.InputStopAfterTicks)*5*dt) {
+		t.Errorf("room-a a1 pos.x = %v, want %v", a1.Pos.X, float32(game.InputStopAfterTicks)*5*dt)
+	}
+	if !almostEqual(b1.Velocity.X, 5) || !almostEqual(b1.Velocity.Z, 0) {
+		t.Errorf("room-b b1 velocity = %v, want (5, 0) [room-a expiry must not cross rooms]", b1.Velocity)
+	}
+	if !almostEqual(b1.Pos.X, float32(game.InputStopAfterTicks+1)*5*dt) {
+		t.Errorf("room-b b1 pos.x = %v, want %v", b1.Pos.X, float32(game.InputStopAfterTicks+1)*5*dt)
+	}
+}

@@ -526,6 +526,8 @@ MoveInput { seq, dir { x, z }, speed, yaw }
 - `yaw` va en **radianes crudos**; el server no lo normaliza. Normalizá vos para el render y interpolá por el camino más corto (recibir `6.28` y después `0.0` es un giro legítimo, no un salto).
 - El server integra `pos.x += velocity.x * dt`, `pos.z += velocity.z * dt` a **20 Hz** (dt fijo de 50 ms) y después resuelve `y = HeightAt(x, z)`.
 - Sin colisión ni navmesh en v2: el server no bloquea paredes ni obstáculos.
+- **Mantené la intención mientras la tecla está apretada**: mandá un `MoveInput` por tick (~20/s). El server no recuerda tu dirección más allá de 500 ms.
+- **Al soltar, mandá un neutro ya**: `dir: { x: 0, z: 0 }, speed: 0`. Se procesa en el tick siguiente y deja la velocidad autoritativa en cero en ese mismo tick — no esperes el próximo snapshot para confirmar el freno.
 
 ### 7.3 Frecuencia y predicción
 
@@ -533,6 +535,7 @@ MoveInput { seq, dir { x, z }, speed, yaw }
 - **v2 no tiene client prediction.** El snapshot es el estado canónico: aplicá el último y descartá los viejos.
 - Si querés interpolar o suavizar, es una **decisión de tu cliente**; no cambia la posición autoritativa ni se manda al server. No inventes correcciones de posición.
 - **No hay rate cap de `MoveInput` verificado en el server**: la cola de inputs es por tick y no rechaza por frecuencia. Recomendación de cliente: mandá **como máximo uno por tick (~20/s)** para no engordar la cola. Si mandás varios en un mismo tick, se aplican todos y el último gana para velocidad/yaw; la posición se integra una sola vez.
+- **Watchdog de 500 ms**: si el server pasa **10 ticks (500 ms)** sin un `MoveInput` procesado de tu entidad, pone su velocidad autoritativa en cero antes de integrar. Eso acota el movimiento pegado si tu cliente se cuelga; un neutro explícito corta mucho antes, en su tick de procesamiento. Cualquier input renovado (aunque repita la misma dirección) reinicia el plazo.
 - `MoveInput.seq` es un tag del cliente; en v2 el server **no deduplica ni descarta por seq**. Usalo igual para tu bookkeeping.
 - `stats.speed` **no** es la velocidad de movimiento en v2; la fuente es `MoveInput.speed` clampada a 10.
 
@@ -708,7 +711,7 @@ Si tu página se sirve desde otro puerto, el `Origin` cambia y tenés que agrega
 - [ ] Aplicar `Snapshot` solo si `seq > last-applied`; resetear al reconectar.
 - [ ] Mantener entidades por `id`; `SpawnEntity` agrega, `DespawnEntity` quita.
 - [ ] Elegir el visual por `templateId` con fallback.
-- [ ] Mandar `MoveInput` a ~20/s como máximo; `dir` XZ, `speed` ≤ 10, `yaw` en radianes.
+- [ ] Mandar `MoveInput` a ~20/s como máximo; `dir` XZ, `speed` ≤ 10, `yaw` en radianes; al soltar, neutral inmediato (`dir 0`, `speed 0`).
 - [ ] No implementar predicción autoritativa; si interpolás, que sea solo visual.
 - [ ] `Ping` a ≤ 5/s (250 ms de intervalo deja margen); calcular RTT/EMA/jitter con `clientTime` y `nonce`.
 - [ ] Marcar stale tras ~10 s sin `Pong` ni `Snapshot` (política propia).

@@ -247,7 +247,12 @@ func (s *Simulation) Step() error {
 			applyMove(e, in.dir, in.speed, in.yaw, s.maxSpeed)
 			e.LastInputTick = s.tick
 			e.LastInputSeq = in.clientSeq
+			e.inputSeen = true
 		}
+		// Stale-input watchdog (deterministic, tick-based): a processed
+		// input renews the deadline; an expired one zeroes velocity
+		// BEFORE integration so the entity does not move on this tick.
+		expireStaleInput(e, s.tick)
 		Integrate(e, dt)
 		// Derived Y (design D4, spec CTH-1): after integration the
 		// entity's height is the terrain at its NEW position — Y is

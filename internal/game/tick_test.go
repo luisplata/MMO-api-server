@@ -657,3 +657,181 @@ func TestSimulationDeterminismOnHills(t *testing.T) {
 		}
 	}
 }
+
+// P23: stale-input movement stop. A processed MoveInput renews the
+// entity's deadline; after InputStopAfterTicks ticks without one the
+// tick zeroes the authoritative velocity BEFORE integration, so the
+// entity never advances on the expiry tick. Exact ticks, no sleeps.
+
+func stepN(t *testing.T, sim *Simulation, n int) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		if err := sim.Step(); err != nil {
+			t.Fatalf("Step %d: %v", i, err)
+		}
+	}
+}
+
+// TestMoveInputExpiresAfterTenIdleTicks pins the exact boundary: an input
+// processed at T keeps the entity moving through T+9 and the T+10 tick
+// zeroes the velocity before integrating (no movement on the expiry tick).
+func TestMoveInputExpiresAfterTenIdleTicks(t *testing.T) {
+	sim := newSim(t, nil)
+	if err := sim.RegisterPlayer("p1", Vec2{}, "", stats.Stats{}); err != nil {
+		t.Fatal(err)
+	}
+	sim.QueueInput("p1", move(1, 0, 5, 1)) // processed at tick T=0
+
+	stepN(t, sim, int(InputStopAfterTicks)) // T..T+9: still moving
+	e, _ := sim.Entity("p1")
+	dt := float32(TickInterval.Seconds())
+	want := float32(InputStopAfterTicks) * 5 * dt
+	if !almostVec(e.Velocity, Vec2{5, 0}) {
+		t.Errorf("velocity after T+%d = %v, want (5, 0) [still inside the deadline]", InputStopAfterTicks-1, e.Velocity)
+	}
+	if !almostEqual(e.Pos.X, want) {
+		t.Errorf("pos.x after T+%d = %v, want %v (%d integrations)", InputStopAfterTicks-1, e.Pos.X, want, InputStopAfterTicks)
+	}
+
+	stepN(t, sim, 1) // T+10: expiry before integration
+	if !almostVec(e.Velocity, Vec2{}) {
+		t.Errorf("velocity at T+%d = %v, want (0, 0) [input deadline expired]", InputStopAfterTicks, e.Velocity)
+	}
+	if !almostEqual(e.Pos.X, want) {
+		t.Errorf("pos.x at T+%d = %v, want %v (stops before integration)", InputStopAfterTicks, e.Pos.X, want)
+	}
+}
+
+// TestMoveInputRenewal pins that any processed input resets the deadline:
+// a renewal at T+9 keeps the entity moving through T+18 and it stops at
+// T+19, not at T+10.
+func TestMoveInputRenewal(t *testing.T) {
+	sim := newSim(t, nil)
+	if err := sim.RegisterPlayer("p1", Vec2{}, "", stats.Stats{}); err != nil {
+		t.Fatal(err)
+	}
+	sim.QueueInput("p1", move(1, 0, 5, 1)) // processed at T=0
+
+	stepN(t, sim, int(InputStopAfterTicks)-1) // T..T+8
+	sim.QueueInput("p1", move(1, 0, 5, 2))    // renewed at T+9
+	stepN(t, sim, 1)                          // T+9
+
+	e, _ := sim.Entity("p1")
+	stepN(t, sim, int(InputStopAfterTicks)-1) // T+10..T+18
+	dt := float32(TickInterval.Seconds())
+	want := float32(2*InputStopAfterTicks-1) * 5 * dt // 19 integrations = 4.75
+	if !almostVec(e.Velocity, Vec2{5, 0}) {
+		t.Errorf("velocity at T+%d = %v, want (5, 0) [renewed deadline still active]", 2*InputStopAfterTicks-2, e.Velocity)
+	}
+	if !almostEqual(e.Pos.X, want) {
+		t.Errorf("pos.x at T+%d = %v, want %v", 2*InputStopAfterTicks-2, e.Pos.X, want)
+	}
+
+	stepN(t, sim, 1) // T+19: renewed deadline expires
+	if !almostVec(e.Velocity, Vec2{}) {
+		t.Errorf("velocity at T+%d = %v, want (0, 0) [renewed deadline expired]", 2*InputStopAfterTicks-1, e.Velocity)
+	}
+	if !almostEqual(e.Pos.X, want) {
+		t.Errorf("pos.x at T+%d = %v, want %v (stops before integration)", 2*InputStopAfterTicks-1, e.Pos.X, want)
+	}
+}
+
+// TestNeutralInputStopsOnProcessingTick pins the explicit key-release
+// path: dir=(0,0), speed=0 zeroes the velocity on its processing tick,
+// before that tick's integration.
+func TestNeutralInputStopsOnProcessingTick(t *testing.T) {
+	sim := newSim(t, nil)
+	if err := sim.RegisterPlayer("p1", Vec2{}, "", stats.Stats{}); err != nil {
+		t.Fatal(err)
+	}
+	sim.QueueInput("p1", move(1, 0, 5, 1))
+	stepN(t, sim, 5) // ticks 0..4 moving
+
+	e, _ := sim.Entity("p1")
+	before := e.Pos
+	sim.QueueInput("p1", move(0, 0, 0, 2))
+	stepN(t, sim, 1) // tick 5: neutral processed
+
+	if !almostVec(e.Velocity, Vec2{}) {
+		t.Errorf("velocity after neutral input = %v, want (0, 0)", e.Velocity)
+	}
+	if !almostVec(e.Pos, before) {
+		t.Errorf("pos after neutral input = %v, want %v (no integration on the stop tick)", e.Pos, before)
+	}
+	stepN(t, sim, 20)
+	if !almostVec(e.Pos, before) || !almostVec(e.Velocity, Vec2{}) {
+		t.Errorf("pos/velocity after 20 more ticks = %v/%v, want %v/(0, 0)", e.Pos, e.Velocity, before)
+	}
+}
+
+// TestIdleSpawnNeverMoves pins the never-input case and proves the tick-0
+// distinction: LastInputTick == 0 is a VALID processed tick, not "never
+// input", so an input processed at tick 0 must still expire at T+10 while
+// an untouched spawn stays put forever.
+func TestIdleSpawnNeverMoves(t *testing.T) {
+	t.Run("idle spawn never moves", func(t *testing.T) {
+		sim := newSim(t, nil)
+		if err := sim.RegisterPlayer("p1", Vec2{3, 4}, "", stats.Stats{}); err != nil {
+			t.Fatal(err)
+		}
+		stepN(t, sim, 30)
+		e, _ := sim.Entity("p1")
+		if !almostVec(e.Pos, Vec2{3, 4}) || !almostVec(e.Velocity, Vec2{}) {
+			t.Errorf("idle spawn pos/velocity = %v/%v, want (3, 4)/(0, 0)", e.Pos, e.Velocity)
+		}
+	})
+
+	t.Run("tick zero input expires at T+10", func(t *testing.T) {
+		sim := newSim(t, nil)
+		if err := sim.RegisterPlayer("p1", Vec2{}, "", stats.Stats{}); err != nil {
+			t.Fatal(err)
+		}
+		sim.QueueInput("p1", move(1, 0, 5, 1))
+		stepN(t, sim, 1) // processed at tick 0
+		e, _ := sim.Entity("p1")
+		if e.LastInputTick != 0 {
+			t.Fatalf("LastInputTick = %d, want 0 (tick-0 input)", e.LastInputTick)
+		}
+		stepN(t, sim, int(InputStopAfterTicks)-1) // T+1..T+9 still moving
+		if !almostVec(e.Velocity, Vec2{5, 0}) {
+			t.Errorf("velocity at T+9 = %v, want (5, 0) [tick-0 input is not 'never input']", e.Velocity)
+		}
+		stepN(t, sim, 1) // T+10
+		if !almostVec(e.Velocity, Vec2{}) {
+			t.Errorf("velocity at T+10 = %v, want (0, 0) [tick-0 input expired]", e.Velocity)
+		}
+	})
+}
+
+// TestStalePlayerDoesNotStopOthers pins per-entity deadlines: p1's input
+// expires at T+10 while p2, renewed at T+5, keeps moving.
+func TestStalePlayerDoesNotStopOthers(t *testing.T) {
+	sim := newSim(t, nil)
+	for _, id := range []string{"p1", "p2"} {
+		if err := sim.RegisterPlayer(id, Vec2{}, "", stats.Stats{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sim.QueueInput("p1", move(1, 0, 5, 1))
+	sim.QueueInput("p2", move(1, 0, 5, 2))
+
+	stepN(t, sim, 5)                       // ticks 0..4
+	sim.QueueInput("p2", move(1, 0, 5, 3)) // tick 5 renewal
+	stepN(t, sim, 6)                       // ticks 5..10
+
+	p1, _ := sim.Entity("p1")
+	p2, _ := sim.Entity("p2")
+	dt := float32(TickInterval.Seconds())
+	if !almostVec(p1.Velocity, Vec2{}) {
+		t.Errorf("stale p1 velocity = %v, want (0, 0)", p1.Velocity)
+	}
+	if !almostEqual(p1.Pos.X, float32(InputStopAfterTicks)*5*dt) {
+		t.Errorf("stale p1 pos.x = %v, want %v", p1.Pos.X, float32(InputStopAfterTicks)*5*dt)
+	}
+	if !almostVec(p2.Velocity, Vec2{5, 0}) {
+		t.Errorf("renewed p2 velocity = %v, want (5, 0) [p1 expiry must not touch p2]", p2.Velocity)
+	}
+	if !almostEqual(p2.Pos.X, float32(InputStopAfterTicks+1)*5*dt) {
+		t.Errorf("renewed p2 pos.x = %v, want %v", p2.Pos.X, float32(InputStopAfterTicks+1)*5*dt)
+	}
+}
