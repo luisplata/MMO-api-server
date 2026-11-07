@@ -167,6 +167,20 @@ func e2eCharacterRepo(t *testing.T) character.CharacterRepository {
 	return repo
 }
 
+// freeLoopbackAddr finds a free loopback TCP port by binding :0 and
+// releasing it. The address is then handed to server.Run, which re-binds
+// it; startServer retries if a race loses it.
+func freeLoopbackAddr(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("probe loopback listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+	return addr
+}
+
 // freeLoopbackPorts finds two free loopback ports by binding :0 sockets
 // and releasing them. The addresses are then handed to server.Run, which
 // re-binds them; startServer retries if a race loses one.

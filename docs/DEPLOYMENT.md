@@ -96,7 +96,9 @@ mv /srv/mmo/maps/staging/arena.heightmap /srv/mmo/maps/arena.heightmap
 El server recibe el mapa con el flag `-map` (sin valor = fixture embebido `hills`):
 
 ```bash
-./mmo-server -tcp :8000 -udp :8001 -map /srv/mmo/maps/arena.heightmap
+./mmo-server -wss 10.0.0.10:8080 \
+  -wss-origins https://game.example.com \
+  -map /srv/mmo/maps/arena.heightmap
 ```
 
 Con docker-compose (el server se configura por flags, ver `docker-compose.yml`):
@@ -108,10 +110,10 @@ services:
     volumes:
       - /srv/mmo/maps:/maps:ro
     command:
-      - -tcp
-      - :8000
-      - -udp
-      - :8001
+      - -wss
+      - 10.0.0.10:8080
+      - -wss-origins
+      - https://game.example.com
       - -map
       - /maps/arena.heightmap
 ```
@@ -194,3 +196,44 @@ git revert <commit-del-server-v2>   # o: git checkout <tag-v1> -- cmd internal
 - [ ] Boot: el log muestra `server: map active: <path>` y el proceso queda escuchando.
 - [ ] Smoke E2E de la colina verde.
 - [ ] (Si algo falló) Rollback §8a o §8b ejecutado y verificado.
+
+---
+
+## 10. WSS detrás de un proxy TLS (P9)
+
+El browser solo habla `wss://`; el binario Go escucha **HTTP plano** en una dirección privada y no gestiona certificados.
+
+```
+Browser ──wss(443)──► nginx (TLS + Host/Origin) ──ws(privado)──► mmo-server
+```
+
+### Flags del server
+
+| Flag | Valor | Por qué |
+|------|-------|---------|
+| `-wss` | `10.0.0.10:8080` (o `127.0.0.1:8080` si el proxy es local) | upstream privado; nunca publicar este puerto |
+| `-wss-origins` | `https://game.example.com` | allowlist explícita; un `*` aborta el boot |
+| `-map` | `/srv/mmo/maps/arena.heightmap` | mapa (ver §3–§8) |
+
+El binario **no** tiene flags `-cert`, `-key`, `-tls` ni equivalentes: emitir y renovar claves es responsabilidad del proxy.
+
+### Proxy
+
+Usar `deploy/proxy/nginx.conf` como base. Estos tres puntos rompen el upgrade si faltan:
+
+1. `proxy_http_version 1.1`
+2. `proxy_set_header Upgrade $http_upgrade` + `Connection $connection_upgrade`
+3. `proxy_read_timeout` mayor al intervalo de ping (el cliente pingea ~5/s; el ejemplo usa 30 s)
+
+El proxy debe preservar `Host` y `Origin`: el server valida `Origin` contra `-wss-origins`. No reescribir `Origin` a un valor fijo "para que funcione" — eso anula la allowlist.
+
+### Verificación
+
+```bash
+# 101 + lifecycle + frames binarios + cierre 1009 a través del proxy TLS
+go test ./internal/e2e/ -run TestWSSThroughTLSProxy
+```
+
+- `ws://` directo al proxy no existe: el único listener público es el `server` TLS. El upstream tampoco debe aceptar tráfico desde fuera de la red privada.
+- El upstream responde plano porque confía en el salto del proxy. Publicarlo anula TLS y la allowlist.
+- Rollback: revertir P9 (config/docs/test) no toca P8; el server sigue arrancando con `-wss`.
