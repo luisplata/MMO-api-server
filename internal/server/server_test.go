@@ -96,13 +96,13 @@ func newTestServer(t *testing.T) *Server {
 		auth:    devAuthenticator{enabled: true},
 		udp:     &fakePacketConn{},
 		players: make(map[string]*player),
-		simOps:  make(chan simOp),
 	}
 	sim, err := game.NewSimulation(game.SimulationConfig{Sink: srv})
 	if err != nil {
 		t.Fatalf("NewSimulation: %v", err)
 	}
 	srv.sim = sim
+	srv.runner = newRoomRunner(sim, srv, nil)
 	return srv
 }
 
@@ -243,7 +243,7 @@ func TestEnterWorldRegistersAndSendsRealSnapshot(t *testing.T) {
 		nextFrame(t, frames)
 	}
 
-	// The sim-owner goroutine consumes simOps so enterWorld's register
+	// The sim-owner goroutine consumes room ops so enterWorld's register
 	// op can complete. The wake channel never fires.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

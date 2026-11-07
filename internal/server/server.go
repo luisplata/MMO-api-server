@@ -105,10 +105,9 @@ type Server struct {
 	mu      sync.Mutex
 	players map[string]*player
 
-	// simOps serializes every simulation mutation (join/leave) onto the
-	// sim-owner goroutine — internal/game's RegisterPlayer/RemovePlayer/
-	// TakeInterestEvents are NOT safe to call concurrently with Step.
-	simOps chan simOp
+	// runner owns every per-room simulation (sim above is the DefaultRoom
+	// entry) and its room-owner goroutine — one ticker stepping all rooms.
+	runner *roomRunner
 
 	wg     sync.WaitGroup
 	cancel context.CancelFunc
@@ -134,7 +133,6 @@ func New(cfg Config) (*Server, error) {
 		templates:  cfg.Templates,
 		characters: cfg.Characters,
 		players:    make(map[string]*player),
-		simOps:     make(chan simOp),
 	}
 	if cfg.Spawn == nil {
 		// Default resolver: every selected character spawns at the
@@ -149,6 +147,9 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 	srv.sim = sim
+	// The legacy world becomes the default room; new rooms reuse srv as the
+	// snapshot sink and the configured heights.
+	srv.runner = newRoomRunner(sim, srv, cfg.Heights)
 	return srv, nil
 }
 
@@ -303,8 +304,9 @@ func (s *Server) cleanupConn(ctx context.Context, conn net.Conn, sess *session.S
 	_ = sess.Close()
 	if cid != "" {
 		// RemovePlayer is a no-op for entities that never joined and
-		// returns ctx.Err during shutdown — both are benign.
-		_ = s.simDo(ctx, func() error { return s.sim.RemovePlayer(cid) })
+		// returns ctx.Err during shutdown — both are benign. The leave is
+		// addressed to the character's room (P6: the default room).
+		_ = s.simDo(ctx, DefaultRoom, -1, func(sim *game.Simulation) error { return sim.RemovePlayer(cid) })
 		s.mu.Lock()
 		p := s.players[cid]
 		delete(s.players, cid)
@@ -359,7 +361,7 @@ func (s *Server) enterWorld(ctx context.Context, conn net.Conn, sess *session.Se
 	// Design D4/D5: the entity registers at the character spawn with the
 	// character's template id + frozen stats snapshot. The sim re-resolves
 	// the terrain height authoritatively.
-	frame, err := s.registerAndSnapshot(ctx, cid, spawnFromProto(spawn), char.TemplateID, char.Stats, sess.WireVersion())
+	frame, err := s.registerAndSnapshot(ctx, DefaultRoom, cid, spawnFromProto(spawn), char.TemplateID, char.Stats, sess.WireVersion())
 	if err != nil {
 		s.mu.Lock()
 		delete(s.players, cid)
