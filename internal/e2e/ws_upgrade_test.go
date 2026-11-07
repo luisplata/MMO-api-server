@@ -35,11 +35,11 @@ const (
 	proxyDialTimeout      = 15 * time.Second
 )
 
-// startProxyUpstream boots the real server with a WSS-only private listener on
+// startServer boots the real server with a WSS-only private listener on
 // loopback (the deployment's plain upstream) and returns the WSS URL
 // browsers dial plus a shutdown that waits for Run to return. Transport
 // legacy listeners are not started.
-func startProxyUpstream(t *testing.T) (wssURL string, shutdown func()) {
+func startServer(t *testing.T) (wssURL string, shutdown func()) {
 	t.Helper()
 	for attempt := 0; ; attempt++ {
 		addr := freeLoopbackAddr(t)
@@ -201,7 +201,7 @@ func enterWorldProxy(t *testing.T, ctx context.Context, c *websocket.Conn, reg *
 }
 
 func TestWSSThroughTLSProxy(t *testing.T) {
-	wssURL, shutdown := startProxyUpstream(t)
+	wssURL, shutdown := startServer(t)
 	t.Cleanup(shutdown)
 	front := startTLSProxy(t, wssURL)
 	ctx, cancel := context.WithTimeout(context.Background(), proxyDialTimeout)
@@ -224,7 +224,7 @@ func TestWSSThroughTLSProxy(t *testing.T) {
 }
 
 func TestWSSThroughTLSProxyRejectsDisallowedOrigin(t *testing.T) {
-	wssURL, shutdown := startProxyUpstream(t)
+	wssURL, shutdown := startServer(t)
 	t.Cleanup(shutdown)
 	front := startTLSProxy(t, wssURL)
 	ctx, cancel := context.WithTimeout(context.Background(), proxyDialTimeout)
@@ -243,7 +243,7 @@ func TestWSSThroughTLSProxyRejectsDisallowedOrigin(t *testing.T) {
 }
 
 func TestWSSThroughTLSProxyReadLimit(t *testing.T) {
-	wssURL, shutdown := startProxyUpstream(t)
+	wssURL, shutdown := startServer(t)
 	t.Cleanup(shutdown)
 	front := startTLSProxy(t, wssURL)
 	ctx, cancel := context.WithTimeout(context.Background(), proxyDialTimeout)

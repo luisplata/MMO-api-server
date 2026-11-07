@@ -14,7 +14,7 @@ import (
 )
 
 func TestWSSMoveInputOutOfRangeVersionCloses(t *testing.T) {
-	wssURL, shutdown := startProxyUpstream(t)
+	wssURL, shutdown := startServer(t)
 	t.Cleanup(shutdown)
 	front := startTLSProxy(t, wssURL)
 	reg := protocol.NewWorldRegistry()
