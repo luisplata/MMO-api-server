@@ -210,6 +210,7 @@ Cuando estos mensajes existan, sus ids y campos se agregan al `.proto` y a este 
 | **I1 — plantilla Duarte** | Duarte | Entrada: §2.1 + §2.2 + §2.3. Salida: paquete de mapa, JSON de contenido, respuestas a las 10 preguntas | `abierto` | Completar esta fila con hash/revisión y cambiar estado a `confirmado` o `propuesto` con correcciones. |
 | **I2 — plantilla Server** | Server | Entrada: respuesta de Duarte. Salida: `.proto`/design del primer slice, contrato de mapa en `docs/`, campos nuevos con número asignado | `abierto` | El server responde pregunta por pregunta y publica el contrato antes de implementar. |
 | **I3 — plantilla ambos** | Duarte + Server | Entrada: build de staging. Salida: resultado del gate de M2 (alineación de mapa) | `abierto` | Un jugador no atraviesa pilares, el agua frena y ambos ven el mismo layout. |
+| **I1-server (respuesta)** — 2026-11-07 | Server | Entrada: `COMBATE_CLIENTE_A_SERVIDOR.md` I1. Salida: §7 (respuesta a 10+12, pedido de mapa/contenido/proto v3) | `propuesto` | Duarte responde §7.3–§7.5 en su I2 con `map.json`, `content.json`, hash y confirmación de v3. |
 
 **Cómo editar sin romper el handoff**: agregá una fila al final, actualizá el estado de la anterior si cambió, y dejá el artefacto concreto (commit, hash, ruta). No borres filas viejas: son la evidencia de por qué el contrato dice lo que dice.
 
@@ -240,3 +241,77 @@ Cuando estos mensajes existan, sus ids y campos se agregan al `.proto` y a este 
 | `D:\Web\PokemonPvpWeb\src\data\abilities.js` | 40 habilidades en catálogo |
 
 **Este documento no implementa nada.** No crea mensajes, no asigna ids nuevos, no modifica `SERVIDOR_PENDIENTES.md` y no promete comportamiento que no esté en `main`.
+
+---
+
+## 7. I1 — Respuesta del servidor / pedido para I2 (2026-11-07)
+
+> **Verificado contra**: HEAD `89df73f` (2026-11-07) de `mmo-api-server` y la I1 del cliente (`D:\Web\PokemonPvpWeb\docs\COMBATE_CLIENTE_A_SERVIDOR.md`, HEAD `3c986f7`).
+> **Alineación de numeración**: cliente I1 (respuestas) → server I1 (esta sección) → cliente I2 (paquete de mapa + contenido). La §5 conserva sus filas y suma la respuesta del server.
+> **Etiquetas**: `confirmado` = ya en `main` o decisión cerrada por ambas partes; `propuesto` = **server proposal — awaiting Duarte confirmation**; `abierto` = falta un artefacto o un número.
+
+### 7.1 Aceptado (confirmado)
+
+| Punto | Acuerdo | Nota verificada |
+|---|---|---|
+| **D1** aim | Punto `aim{x,z}` + `aimMode`; el server clampea al `range` del caster y a bounds. | Semántica exacta del clamp (radial vs. por eje, orden range/bounds) se fija con el primer `AbilityCast`. No hay código de combate todavía. |
+| **D2** export | Datos de las 40; gates de aceptación sobre las 24 de kit. | El export no se recorta. |
+| **D5** arena | Una sola arena canónica, layout fijo, sin radios aleatorios por cliente/partida. | Los pilares siguen sin existir en la simulación; es contrato de M2. |
+| **D7** tick | 20 Hz en el wire; el server puede sub-steppear internamente y consumir remanentes. | `TickRate = 20`, `TickInterval = 50 ms`; los sub-steps no cambian el contrato ni la frecuencia de input. |
+| **D9** PP/invuln/cosméticos | `pp` ausente → infinito (`-1` en el wire), `0` = sin usos; `invuln` reservado; `ring`/`floater` solo cliente. | **`face` no es cosmético puro**: fija el `facing` autoritativo del caster (`Entity.Yaw`), y el server lo usará al resolver el cast. `ring`/`floater` no se simulan. |
+| **D10** atk/def | No participan del daño: `cantidad × typeMult` (+ `empowered`). | `Stats.atk/def` existen en el wire y en `data/templates.json`, pero combate no los leerá. Cambiar la fórmula requiere aprobación de ambos equipos. |
+| **P23** stop | Al soltar, el cliente manda `MoveInput` neutro; mientras mantiene, repite intención. Watchdog del server: 10 ticks / 500 ms → velocidad 0. | Verificado en `internal/game/movement.go` (`DefaultMaxSpeed = 10`, `InputStopAfterTicks = 10`). v2 no deduplica por `seq`. |
+
+### 7.2 Respuesta a las 12 preguntas del cliente (§5 de su documento)
+
+| # | Respuesta del server | Estado |
+|---|---|---|
+| 1 | **No hay ids nuevos.** El catálogo sigue siendo 1–22 exhaustivo. Propuesta: `AbilityCast`, `Hit`/`Damage`, `CastRejected`, `CastInterrupted`, `Death`, `MatchStart`, `MatchEnd` y rendición/revancha como mensajes discretos en canal confiable. El server publica ids y campos **después** de cerrar §7.3 #5. Inventar ids del lado cliente sigue siendo deuda, no contrato. | `propuesto` |
+| 2 | **Sí, con campos acotados**: `hp`, `maxHp`, `alive`, `classId`, `res`, PP y cooldowns por slot, estados con `remaining`/`stacks`, `shield`, `invis`, `aiming`. Se publican en el snapshot autoritativo; el cliente no calcula ninguno. | `propuesto` |
+| 3 | **Sí**: `projectiles[]`, `zones[]`, `traps[]` con `id` estable, `ownerId`, primitiva, posición, radio/ángulo, TTL y estado. Listas acotadas y ordenadas por `id` para interpolar sin adivinar. | `propuesto` |
+| 4 | Hoy el snapshot es **estado completo**, flat y a 10 Hz. Estimación: un `EntityState` ronda 80–100 bytes en el wire → ~650 entidades caben en 64 KiB, pero el server **pide máximos simultáneos** antes de fijar caps. Primer slice: seguir full-state; delta recién con datos de soak. | `propuesto` + `abierto` (caps) |
+| 5 | v2 no tiene rate cap ni dedupe. Propuesta v3: máximo 1 `MoveInput` procesado por tick, gana el último; se descarta `seq <= último procesado`; el exceso sobre 20/s se drena sin aplicar. | `propuesto` |
+| 6 | **v3 con `moveMag` autoritativo** (ver §7.3 #3). No hay cambio silencioso de semántica en v2: sube el major y un cliente viejo no conecta. | `propuesto` |
+| 7 | Rechazo de cast = **evento explícito** (`CastRejected` con motivo y slot), nunca cierre de sesión. La regla de §2.4 ya está confirmada; solo falta el mensaje. | `propuesto` (regla `confirmado`) |
+| 8 | Sin timeout en el primer slice salvo que Duarte entregue duración y criterio de ganador. | `propuesto` |
+| 9 | Revancha en la **misma sala**, la piden los dos, reinicia HP/estado/cooldowns/PP, no cambia de mapa y no vuelve a la cola. | `propuesto` |
+| 10 | `contentVersion` viaja en `ServerInfo` y `MatchStart`; mismatch **bloquea la partida, no la conexión**; UX "contenido desactualizado". Requiere campos aditivos nuevos. | `propuesto` |
+| 11 | **24 kits implementados y aceptados; 40 exportadas.** Las 16 de pool quedan no jugables hasta priorización explícita. | `confirmado` (alcance) |
+| 12 | **`carnaval-solar-v1` es plano**, `height = 0`. El loader actual lo acepta con una grilla de ceros (ver §7.3 #1). | `confirmado` |
+
+### 7.3 Puntos que necesitan respuesta de Duarte
+
+**1. Mapa — el desajuste sigue abierto.** El server confirma que `carnaval-solar-v1` 130×85 u, Y=0, agua `z ∈ [38,47]` con `speedScale 0.7` es el objetivo. Hoy el default es `hills` 32×32 cell 10 → 310×310 u, y `combate_map` 257×257 cell 0.78125 → 200×200 u es opcional con `-map`; ninguno viaja en el wire. **server proposal — awaiting Duarte confirmation**: entregar el paquete completo con los 18 pilares y **radio fijo por pilar**, los dos spawns, bounds jugables, `origin`/orientación de grilla, `mapId` y hash. El `sha256` del manifest ya existe y sirve como hash de mapa; falta publicarlo. Sin `mapId` en el wire, dos clientes pueden dibujar arenas distintas sin error.
+
+> Detalle del loader (verificado): la cobertura es `(Width−1) × CellSize`. Para 130×85 u con `cell_size = 1` hace falta **131×86**, no 130×85; con `cell_size = 0.5`, 261×171. `y_scale` debe ser `> 0` y todas las muestras `0` dan altura 0. El origin puede ser `(0,0)`. El formato binario `.heightmap` + `.manifest` es obligatorio para `-map`; la alternativa es que el server acepte una representación plana sin archivo (cambio de código, no de datos).
+
+**2. Export de contenido.** **server proposal — awaiting Duarte confirmation**: `content.json` reproducible desde `classes.js`/`abilities.js`/`types.js`, con commit/hash de origen, mapping estable `classId 1–8` (§7.4) y lista explícita de comportamientos no representables por las 21 primitivas. Verificado en el cliente: hay **40 entradas**, exactamente **21 runners `do`**, y el catálogo es 100% data; las closures viven en la capa `RUNNERS`/`statusOnHit`, no por habilidad. El server valida en boot (ids, 3 por kit, primitivas implementadas) y **no copia tablas a mano**.
+
+**3. Input de movimiento y versión.** v2 manda `speed` absoluto y clampa en 10 u/s; el cliente necesita 10.25 (umbraclaw) y 14.86 con `veil` (+45%). **server proposal — awaiting Duarte confirmation**: nuevo major **v3** con `moveMag 0..1` autoritativo; el server deriva `speed_clase × moveMag × multiplicadores` (agua, veil, etc.). Sin cambio silencioso en v2: `protoVer` negocia `[3,3]` y un cliente v2 recibe `VersionMismatch`. Confirmar v3 / no compatibilidad con clientes viejos, o proponer otro plan de convivencia.
+
+**4. Ciclo de partida.** **server proposal — awaiting Duarte confirmation**: auto-start cuando entra el segundo jugador (consistente con que no hay ready gate), `MatchEnd` por KO o rendición, revancha mutua en la misma sala, forfeit inmediato al desconectar (no hay resume), y **sin timeout** en el primer slice salvo duración explícita del cliente.
+
+**5. Contrato de wire/datos.** No hay ids de combate asignados. **server proposal — awaiting Duarte confirmation**: mensajes discretos (`AbilityCast`, `Hit`, `CastRejected`, `CastInterrupted`, `Death`, `MatchEnd`) en canal confiable; snapshots con HP/alive/classId/res/PP/cooldowns/estados y listas acotadas de proyectiles/zonas/traps. Duarte debe dar **máximos simultáneos y campos máximos por lista** para mantener cada envelope < 64 KiB. El server publica proto ids/campos concretos recién después de estas respuestas.
+
+**6. Versiones.** Se acepta `contentVersion` de 8 hex como **detector de mismatch de contenido**, no como token de seguridad ni de autorización. **server proposal — awaiting Duarte confirmation**: regla canónica de serialización/hash (JSON con orden de claves fijo y documentado) y `mapId` + hash de mapa separados, para detectar arena equivocada además de contenido viejo.
+
+### 7.4 Mapping `classId` (abierto)
+
+Propuesto en el orden de la tabla de clases del cliente; Duarte confirma que sea estable:
+
+| `classId` | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| key | `terravox` | `umbraclaw` | `psyflame` | `floraviva` | `campeon` | `mortero` | `franco` | `disparador` |
+
+`classId` es aditivo y numérico; `templateId` queda solo como hint visual heredado. Sin este número congelado, el server no puede asignar HP/kit correctos.
+
+### 7.5 Alcance del primer slice (propuesto)
+
+Se implementan y aceptan las **24 habilidades de kit**; las **40** se exportan y cargan, y las **16 de pool** quedan no jugables hasta priorización separada. El primer combate online va **después de M0**: un set chico (p. ej. Terravox vs. Psyflame) y luego olas de primitivas. El server **no** se compromete a las 21 primitivas en una sola entrega monolítica.
+
+### 7.6 Acciones para Duarte (I2)
+
+- [ ] Entregar el paquete completo de arena plana con los 18 radios fijos y ambos spawns; si 130×85 no es la dimensión correcta, corregirla explícitamente.
+- [ ] Entregar `content.json` reproducible, commit/hash de origen y excepciones de closures.
+- [ ] Confirmar plan de proto v3, mapping `classId`, ciclo de partida/desconexión/timeout, canonicalización del hash y caps de entidades del snapshot.
+- [ ] Registrar las respuestas en `PokemonPvpWeb/docs/COMBATE_CLIENTE_A_SERVIDOR.md` y anexar acá el estado; **no** editar el protocolo hasta que el server publique el schema versionado.
