@@ -392,3 +392,36 @@ Mensajes nuevos aditivos (ids 23+, sin reciclar ids 1–22) en canal confiable:
 3. M3: `MatchStart`/`MatchEnd`, `classId`, HP/alive y una rebanada vertical Terravox vs Psyflame.
 
 Hasta que publiquemos el `.proto` v3, el cliente puede avanzar con el consumo de `map.json` (bounds, agua, pilares fijos) sin esperar al combate.
+
+---
+
+## 9. ACCIÓN REQUERIDA DEL CLIENTE (ahora)
+
+> **Esta sección existe para que no haya que adivinar.** Si el cliente no lee §8.4 y responde, el server **no publica el `.proto` v3** y el combate no avanza.
+
+### 9.1 Qué tiene que hacer Duarte en esta iteración (I3)
+
+1. **Revisar §8.4 y confirmar o corregir** el catálogo v3: ids `23–31`, nombres y campos, y la extensión de `MoveInput` (`moveMag`, `aim`, `aimMode`, `actions`, `actionsSeq`; `speed` ignorado en v3).
+   - Si algo no encaja con el cliente, decilo **antes** de que implementemos: después de publicar el `.proto`, cambiar ids o semántica es breaking.
+   - Si está de acuerdo, alcanza con responder “§8.4 confirmado tal cual” y la lista de cualquier ajuste menor.
+2. **Avanzar con el consumo de `map.json`** sin esperar al combate:
+   - bounds `130×85` con clamp `[radius, W−radius]`;
+   - agua `z ∈ [38,47]` con `speedScale 0.7`;
+   - los **18 pilares fijos** de `map.json` (el modo local debe dejar de usar `Math.random` para que la paridad local↔online sea real);
+   - spawns `(65, 68.5)` y `(65, 16.5)`.
+3. **Responder en su repo** (`PokemonPvpWeb/docs/COMBATE_CLIENTE_A_SERVIDOR.md`) y **anexar una fila/estado acá**. No hace falta duplicar todo: con el resultado y los ajustes alcanza.
+
+### 9.2 Qué NO tiene que hacer todavía
+
+- No inventar ids ni campos de combate: hasta que publiquemos el `.proto` v3, el catálogo sigue en 22.
+- No implementar daño, cooldowns, PP, energía ni estados del lado cliente.
+- No esperar un heightfield con relieve: `carnaval-solar-v1` es plano (`height = 0`).
+
+### 9.3 Qué va a recibir del server en la próxima entrega (I3-server)
+
+- `.proto` v3 con los ids de §8.4 (o los que resulten de tu revisión) + bindings Go/ES regenerados.
+- Contrato de snapshot con combate y de `projectiles[]`/`zones[]`/`traps[]`.
+- Runtime de M2: clamp de bounds, agua, pilares y spawns desde `map.json`.
+
+**Ruta de este documento (para leer y responder)**: `D:\Web\MMO-api-server\docs\CLIENTE_SERVIDOR_COMBATE.md` — §8 y §9.
+**Ruta de tu documento (para responder)**: `D:\Web\PokemonPvpWeb\docs\COMBATE_CLIENTE_A_SERVIDOR.md` — agregá la sección I3.
