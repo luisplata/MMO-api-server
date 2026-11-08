@@ -1,0 +1,1423 @@
+{
+  "contentVersion": "731e2a2d",
+  "meta": {
+    "sourceCommit": "3c986f7",
+    "generatedAt": "2026-11-08T01:56:13.904Z",
+    "pxPerUnit": 20,
+    "classOrder": [
+      "terravox",
+      "umbraclaw",
+      "psyflame",
+      "floraviva",
+      "campeon",
+      "mortero",
+      "franco",
+      "disparador"
+    ],
+    "primitives": [
+      "aura",
+      "beam",
+      "blink",
+      "buff",
+      "cast",
+      "cleanse",
+      "cleanseSlow",
+      "cone",
+      "dash",
+      "face",
+      "floater",
+      "heal",
+      "mine",
+      "projectile",
+      "ring",
+      "scatter",
+      "shield",
+      "spin",
+      "thorns",
+      "zoneAt",
+      "zoneSelf"
+    ],
+    "hashRule": "sha256(canonical-json(classes,abilities,types))[0:8]"
+  },
+  "classes": [
+    {
+      "classId": 1,
+      "key": "terravox",
+      "name": "Defensor",
+      "role": "Tanque",
+      "type": "Tierra",
+      "hp": 1500,
+      "res": 100,
+      "resRegen": 11,
+      "speedPx": 160,
+      "speedU": 8,
+      "radiusPx": 30,
+      "preferredRange": 105,
+      "portraitKey": "defensor",
+      "basic": {
+        "name": "Golpe Pesado",
+        "key": "LMB",
+        "icon": "👊",
+        "cd": 0.9,
+        "dmg": 80,
+        "range": 120,
+        "arc": 1.5,
+        "kind": "melee",
+        "range_ai": 120
+      },
+      "kit": [
+        "seismic-slam",
+        "iron-skin",
+        "earthquake"
+      ]
+    },
+    {
+      "classId": 2,
+      "key": "umbraclaw",
+      "name": "Ubicador",
+      "role": "Asesino",
+      "type": "Siniestro",
+      "hp": 980,
+      "res": 100,
+      "resRegen": 15,
+      "speedPx": 205,
+      "speedU": 10.25,
+      "radiusPx": 24,
+      "preferredRange": 85,
+      "portraitKey": "ubicador",
+      "basic": {
+        "name": "Zarpazo",
+        "key": "LMB",
+        "icon": "🐾",
+        "cd": 0.5,
+        "dmg": 58,
+        "range": 100,
+        "arc": 1.3,
+        "kind": "melee",
+        "range_ai": 100
+      },
+      "kit": [
+        "shadow-slash",
+        "veil",
+        "blade-storm"
+      ]
+    },
+    {
+      "classId": 3,
+      "key": "psyflame",
+      "name": "Energizador",
+      "role": "Mago",
+      "type": "Psiquico",
+      "hp": 880,
+      "res": 120,
+      "resRegen": 15,
+      "speedPx": 175,
+      "speedU": 8.75,
+      "radiusPx": 24,
+      "preferredRange": 430,
+      "portraitKey": "energizador",
+      "basic": {
+        "name": "Chispa Psíquica",
+        "key": "LMB",
+        "icon": "✨",
+        "cd": 0.55,
+        "dmg": 55,
+        "range": 640,
+        "kind": "proj",
+        "projSpeed": 900,
+        "projRadius": 9,
+        "range_ai": 620,
+        "color": "#ff9ecb"
+      },
+      "kit": [
+        "fireball",
+        "teleport",
+        "psychic-nova"
+      ]
+    },
+    {
+      "classId": 4,
+      "key": "floraviva",
+      "name": "Mirash",
+      "role": "Sanador",
+      "type": "Planta",
+      "hp": 1150,
+      "res": 130,
+      "resRegen": 19,
+      "speedPx": 180,
+      "speedU": 9,
+      "radiusPx": 26,
+      "preferredRange": 360,
+      "portraitKey": "mirash",
+      "basic": {
+        "name": "Latigazo",
+        "key": "LMB",
+        "icon": "🌿",
+        "cd": 0.7,
+        "dmg": 52,
+        "range": 520,
+        "kind": "proj",
+        "projSpeed": 700,
+        "projRadius": 10,
+        "range_ai": 500,
+        "color": "#9bffc4"
+      },
+      "kit": [
+        "healing-pulse",
+        "vines",
+        "forest-blessing"
+      ]
+    },
+    {
+      "classId": 5,
+      "key": "campeon",
+      "name": "Campeón",
+      "role": "Bruiser",
+      "type": "Veneno",
+      "hp": 1250,
+      "res": 100,
+      "resRegen": 12,
+      "speedPx": 190,
+      "speedU": 9.5,
+      "radiusPx": 27,
+      "preferredRange": 120,
+      "portraitKey": "campeon",
+      "basic": {
+        "name": "Espina Rápida",
+        "key": "LMB",
+        "icon": "🌵",
+        "cd": 0.45,
+        "dmg": 45,
+        "range": 95,
+        "arc": 1.4,
+        "kind": "melee",
+        "range_ai": 95,
+        "slow": {
+          "pct": 0.1,
+          "dur": 2
+        }
+      },
+      "kit": [
+        "spore-charge",
+        "dorsal-shield",
+        "spore-masterpiece"
+      ]
+    },
+    {
+      "classId": 6,
+      "key": "mortero",
+      "name": "Mortero",
+      "role": "Soporte",
+      "type": "Veneno",
+      "hp": 950,
+      "res": 120,
+      "resRegen": 15,
+      "speedPx": 165,
+      "speedU": 8.25,
+      "radiusPx": 25,
+      "preferredRange": 420,
+      "portraitKey": "mortero",
+      "basic": {
+        "name": "Bola de Cañón",
+        "key": "LMB",
+        "icon": "💣",
+        "cd": 1.1,
+        "dmg": 80,
+        "range": 500,
+        "kind": "proj",
+        "projSpeed": 320,
+        "projRadius": 14,
+        "range_ai": 480,
+        "color": "#d8b24a"
+      },
+      "kit": [
+        "bombardment",
+        "spore-mine",
+        "pearl-rain"
+      ]
+    },
+    {
+      "classId": 7,
+      "key": "franco",
+      "name": "Franco",
+      "role": "Daño",
+      "type": "Veneno",
+      "hp": 850,
+      "res": 100,
+      "resRegen": 14,
+      "speedPx": 195,
+      "speedU": 9.75,
+      "radiusPx": 23,
+      "preferredRange": 480,
+      "portraitKey": "franco",
+      "basic": {
+        "name": "Disparo de Esporas",
+        "key": "LMB",
+        "icon": "🎯",
+        "cd": 0.8,
+        "dmg": 55,
+        "range": 600,
+        "kind": "proj",
+        "projSpeed": 900,
+        "projRadius": 8,
+        "range_ai": 580,
+        "color": "#c0b3e8"
+      },
+      "kit": [
+        "charged-shot",
+        "tailwind",
+        "silent-death"
+      ]
+    },
+    {
+      "classId": 8,
+      "key": "disparador",
+      "name": "Disparador",
+      "role": "Control",
+      "type": "Veneno",
+      "hp": 1000,
+      "res": 110,
+      "resRegen": 14,
+      "speedPx": 175,
+      "speedU": 8.75,
+      "radiusPx": 25,
+      "preferredRange": 350,
+      "portraitKey": "disparador",
+      "basic": {
+        "name": "Fruto Contaminado",
+        "key": "LMB",
+        "icon": "🍇",
+        "cd": 0.9,
+        "dmg": 50,
+        "range": 520,
+        "kind": "proj",
+        "projSpeed": 750,
+        "projRadius": 10,
+        "range_ai": 500,
+        "color": "#8fd0c0",
+        "slow": {
+          "pct": 0.15,
+          "dur": 2
+        }
+      },
+      "kit": [
+        "ice-spikes",
+        "snow-fungus",
+        "spore-winter"
+      ]
+    }
+  ],
+  "abilities": {
+    "seismic-slam": {
+      "id": "seismic-slam",
+      "name": "Impacto Sísmico",
+      "icon": "💥",
+      "cd": 6,
+      "cost": 20,
+      "pp": 15,
+      "types": [
+        "Tierra"
+      ],
+      "range": 190,
+      "aimMode": "target",
+      "desc": "Cono frontal: daño + ralentiza 45% por 2s",
+      "effects": [
+        {
+          "do": "face"
+        },
+        {
+          "do": "ring",
+          "r": 80,
+          "color": "#d4a017",
+          "t": 0.35
+        },
+        {
+          "do": "cone",
+          "range": 190,
+          "halfAngle": 0.85,
+          "dmg": 115,
+          "slow": {
+            "pct": 0.45,
+            "dur": 2
+          },
+          "hitColor": "#d4a017"
+        }
+      ]
+    },
+    "iron-skin": {
+      "id": "iron-skin",
+      "name": "Piel de Hierro",
+      "icon": "🛡️",
+      "cd": 14,
+      "cost": 25,
+      "pp": 10,
+      "types": [
+        "Tierra"
+      ],
+      "range": 9999,
+      "aimMode": "self",
+      "desc": "Escudo de 340 durante 4.5s",
+      "effects": [
+        {
+          "do": "shield",
+          "amount": 340,
+          "dur": 4.5
+        },
+        {
+          "do": "floater",
+          "text": "ESCUDO",
+          "color": "#9fe8ff",
+          "size": 16
+        }
+      ]
+    },
+    "rock-charge": {
+      "id": "rock-charge",
+      "name": "Carga Rocosa",
+      "icon": "🐗",
+      "cd": 13,
+      "cost": 30,
+      "pp": 10,
+      "types": [],
+      "range": 420,
+      "aimMode": "target",
+      "desc": "Embestida: daño + aturde 1s",
+      "effects": [
+        {
+          "do": "dash",
+          "speed": 980,
+          "time": 0.3,
+          "dmg": 105,
+          "stun": 1,
+          "stopOnHit": true,
+          "color": "#d4a017"
+        }
+      ]
+    },
+    "earthquake": {
+      "id": "earthquake",
+      "name": "Terremoto",
+      "icon": "🌋",
+      "cd": 45,
+      "cost": 50,
+      "pp": 5,
+      "types": [
+        "Tierra"
+      ],
+      "range": 260,
+      "aimMode": "self",
+      "desc": "ULTI: AoE a tu alrededor, daño masivo + empuje",
+      "effects": [
+        {
+          "do": "zoneSelf",
+          "r": 250,
+          "delay": 0.45,
+          "dmg": 230,
+          "color": "#d4a017",
+          "knock": 520,
+          "slow": {
+            "pct": 0.5,
+            "dur": 2.5
+          }
+        }
+      ]
+    },
+    "shadow-slash": {
+      "id": "shadow-slash",
+      "name": "Cuchillada Sombría",
+      "icon": "⚡",
+      "cd": 6,
+      "cost": 20,
+      "pp": 15,
+      "types": [
+        "Siniestro"
+      ],
+      "range": 300,
+      "aimMode": "target",
+      "desc": "Dash que atraviesa: daño en el camino",
+      "effects": [
+        {
+          "do": "dash",
+          "speed": 1350,
+          "time": 0.22,
+          "dmg": 135,
+          "color": "#a06bff"
+        }
+      ]
+    },
+    "veil": {
+      "id": "veil",
+      "name": "Velo de Sombras",
+      "icon": "🌑",
+      "cd": 15,
+      "cost": 25,
+      "pp": 10,
+      "types": [
+        "Siniestro",
+        "Psiquico"
+      ],
+      "range": 9999,
+      "aimMode": "self",
+      "desc": "Invisible 1.6s, +45% vel, próximo golpe +60%",
+      "effects": [
+        {
+          "do": "buff",
+          "invis": 1.6,
+          "empowered": 3.5
+        },
+        {
+          "do": "ring",
+          "r": 60,
+          "color": "#a06bff",
+          "t": 0.5
+        }
+      ]
+    },
+    "electric-trap": {
+      "id": "electric-trap",
+      "name": "Trampa Eléctrica",
+      "icon": "🕸️",
+      "cd": 9,
+      "cost": 20,
+      "pp": 15,
+      "types": [
+        "Siniestro",
+        "Psiquico"
+      ],
+      "range": 420,
+      "aimMode": "target",
+      "desc": "Proyectil que enraíza 1.6s",
+      "effects": [
+        {
+          "do": "projectile",
+          "speed": 820,
+          "radius": 11,
+          "dmg": 65,
+          "range": 420,
+          "color": "#ffe066",
+          "rootDur": 1.6
+        }
+      ]
+    },
+    "blade-storm": {
+      "id": "blade-storm",
+      "name": "Tormenta de Cuchillas",
+      "icon": "🌀",
+      "cd": 45,
+      "cost": 50,
+      "pp": 5,
+      "types": [
+        "Siniestro"
+      ],
+      "range": 170,
+      "aimMode": "self",
+      "desc": "ULTI: giras 2.5s con daño en área",
+      "effects": [
+        {
+          "do": "spin",
+          "t": 2.5,
+          "dmg": 58,
+          "radius": 150,
+          "immuneSlow": 2.5
+        },
+        {
+          "do": "ring",
+          "r": 150,
+          "color": "#a06bff",
+          "t": 0.5
+        }
+      ]
+    },
+    "fireball": {
+      "id": "fireball",
+      "name": "Bola de Fuego",
+      "icon": "🔥",
+      "cd": 4.5,
+      "cost": 25,
+      "pp": 15,
+      "types": [
+        "Psiquico"
+      ],
+      "range": 780,
+      "aimMode": "target",
+      "desc": "Skillshot + quemadura 3s",
+      "effects": [
+        {
+          "do": "projectile",
+          "speed": 760,
+          "radius": 15,
+          "dmg": 175,
+          "range": 780,
+          "color": "#ff6b35",
+          "burn": {
+            "dps": 28,
+            "dur": 3
+          }
+        }
+      ]
+    },
+    "ice-prison": {
+      "id": "ice-prison",
+      "name": "Prisión de Hielo",
+      "icon": "❄️",
+      "cd": 11,
+      "cost": 25,
+      "pp": 10,
+      "types": [
+        "Psiquico"
+      ],
+      "range": 620,
+      "aimMode": "target",
+      "desc": "Skillshot que enraíza 1.8s",
+      "effects": [
+        {
+          "do": "projectile",
+          "speed": 700,
+          "radius": 13,
+          "dmg": 70,
+          "range": 620,
+          "color": "#6fd6ff",
+          "rootDur": 1.8
+        }
+      ]
+    },
+    "teleport": {
+      "id": "teleport",
+      "name": "Teletransporte",
+      "icon": "💫",
+      "cd": 15,
+      "cost": 20,
+      "pp": 10,
+      "types": [],
+      "range": 9999,
+      "aimMode": "direction",
+      "desc": "Parpadeo direccional",
+      "effects": [
+        {
+          "do": "blink",
+          "maxDist": 360,
+          "color": "#ff9ecb"
+        }
+      ]
+    },
+    "psychic-nova": {
+      "id": "psychic-nova",
+      "name": "Nova Psíquica",
+      "icon": "🧠",
+      "cd": 50,
+      "cost": 60,
+      "pp": 5,
+      "types": [
+        "Psiquico"
+      ],
+      "range": 320,
+      "aimMode": "self",
+      "desc": "ULTI: aturde 1.3s en gran área",
+      "effects": [
+        {
+          "do": "zoneSelf",
+          "r": 300,
+          "delay": 0.5,
+          "dmg": 215,
+          "color": "#ff5fa2",
+          "stun": 1.3
+        }
+      ]
+    },
+    "healing-pulse": {
+      "id": "healing-pulse",
+      "name": "Pulso Curativo",
+      "icon": "💚",
+      "cd": 6,
+      "cost": 30,
+      "pp": 10,
+      "types": [
+        "Planta",
+        "Psiquico"
+      ],
+      "range": 9999,
+      "aimMode": "self",
+      "desc": "Cura 240 al instante",
+      "effects": [
+        {
+          "do": "heal",
+          "amount": 240
+        },
+        {
+          "do": "ring",
+          "r": 55,
+          "color": "#4bd88a",
+          "t": 0.5
+        }
+      ]
+    },
+    "pollen-shield": {
+      "id": "pollen-shield",
+      "name": "Escudo de Polen",
+      "icon": "🌼",
+      "cd": 12,
+      "cost": 25,
+      "pp": 10,
+      "types": [
+        "Planta"
+      ],
+      "range": 9999,
+      "aimMode": "self",
+      "desc": "Escudo 300 por 5s",
+      "effects": [
+        {
+          "do": "shield",
+          "amount": 300,
+          "dur": 5
+        },
+        {
+          "do": "ring",
+          "r": 50,
+          "color": "#ffe066",
+          "t": 0.5
+        }
+      ]
+    },
+    "vines": {
+      "id": "vines",
+      "name": "Lianas",
+      "icon": "🌱",
+      "cd": 12,
+      "cost": 25,
+      "pp": 15,
+      "types": [
+        "Planta"
+      ],
+      "range": 560,
+      "aimMode": "target",
+      "desc": "Área que enraíza 1.7s",
+      "effects": [
+        {
+          "do": "zoneAt",
+          "r": 135,
+          "delay": 0.35,
+          "dmg": 55,
+          "color": "#4bd88a",
+          "root": 1.7
+        }
+      ]
+    },
+    "forest-blessing": {
+      "id": "forest-blessing",
+      "name": "Bendición del Bosque",
+      "icon": "🌳",
+      "cd": 50,
+      "cost": 60,
+      "pp": 5,
+      "types": [
+        "Planta"
+      ],
+      "range": 400,
+      "aimMode": "self",
+      "desc": "ULTI: cura 480 y limpia estados",
+      "effects": [
+        {
+          "do": "heal",
+          "amount": 480
+        },
+        {
+          "do": "cleanse"
+        },
+        {
+          "do": "zoneSelf",
+          "r": 330,
+          "delay": 0.15,
+          "dmg": 0,
+          "color": "#4bd88a"
+        },
+        {
+          "do": "ring",
+          "r": 330,
+          "color": "#4bd88a",
+          "t": 0.8
+        }
+      ]
+    },
+    "razor-leaf": {
+      "id": "razor-leaf",
+      "name": "Hoja Afilada",
+      "icon": "🍃",
+      "cd": 5,
+      "cost": 22,
+      "pp": 15,
+      "types": [
+        "Planta"
+      ],
+      "range": 600,
+      "aimMode": "target",
+      "desc": "Proyectil que atraviesa enemigos",
+      "effects": [
+        {
+          "do": "projectile",
+          "speed": 850,
+          "radius": 12,
+          "dmg": 80,
+          "range": 600,
+          "color": "#7ddf64",
+          "pierce": true
+        }
+      ]
+    },
+    "sleep-powder": {
+      "id": "sleep-powder",
+      "name": "Somnífero",
+      "icon": "😴",
+      "cd": 12,
+      "cost": 25,
+      "pp": 10,
+      "types": [
+        "Planta"
+      ],
+      "range": 480,
+      "aimMode": "target",
+      "desc": "Nube que duerme 1.5s en área",
+      "effects": [
+        {
+          "do": "zoneAt",
+          "r": 120,
+          "delay": 0.4,
+          "dmg": 30,
+          "color": "#b8a9e0",
+          "stun": 1.5
+        }
+      ]
+    },
+    "ember": {
+      "id": "ember",
+      "name": "Ascuas",
+      "icon": "🔥",
+      "cd": 3.5,
+      "cost": 20,
+      "pp": 20,
+      "types": [
+        "Fuego"
+      ],
+      "range": 640,
+      "aimMode": "target",
+      "desc": "Llamarada rápida + quemadura 2s",
+      "effects": [
+        {
+          "do": "projectile",
+          "speed": 800,
+          "radius": 12,
+          "dmg": 90,
+          "range": 640,
+          "color": "#ff9a3d",
+          "burn": {
+            "dps": 20,
+            "dur": 2
+          }
+        }
+      ]
+    },
+    "smokescreen": {
+      "id": "smokescreen",
+      "name": "Pantalla de Humo",
+      "icon": "💨",
+      "cd": 14,
+      "cost": 25,
+      "pp": 15,
+      "types": [
+        "Fuego"
+      ],
+      "range": 9999,
+      "aimMode": "self",
+      "desc": "Humo que ralentiza 50% alrededor",
+      "effects": [
+        {
+          "do": "zoneSelf",
+          "r": 200,
+          "delay": 0.3,
+          "dmg": 0,
+          "color": "#8a8f98",
+          "slow": {
+            "pct": 0.5,
+            "dur": 2
+          }
+        }
+      ]
+    },
+    "water-gun": {
+      "id": "water-gun",
+      "name": "Pistola Agua",
+      "icon": "💧",
+      "cd": 5,
+      "cost": 22,
+      "pp": 15,
+      "types": [
+        "Agua"
+      ],
+      "range": 620,
+      "aimMode": "target",
+      "desc": "Chorro que empuja al impactar",
+      "effects": [
+        {
+          "do": "projectile",
+          "speed": 820,
+          "radius": 13,
+          "dmg": 95,
+          "range": 620,
+          "color": "#4db2ff",
+          "knock": 260
+        }
+      ]
+    },
+    "withdraw": {
+      "id": "withdraw",
+      "name": "Refugio",
+      "icon": "🐚",
+      "cd": 13,
+      "cost": 25,
+      "pp": 10,
+      "types": [
+        "Agua"
+      ],
+      "range": 9999,
+      "aimMode": "self",
+      "desc": "Escudo de 300 durante 4s",
+      "effects": [
+        {
+          "do": "shield",
+          "amount": 300,
+          "dur": 4
+        },
+        {
+          "do": "ring",
+          "r": 50,
+          "color": "#4db2ff",
+          "t": 0.5
+        }
+      ]
+    },
+    "thunder-shock": {
+      "id": "thunder-shock",
+      "name": "Impactrueno",
+      "icon": "⚡",
+      "cd": 4,
+      "cost": 22,
+      "pp": 15,
+      "types": [
+        "Electrico"
+      ],
+      "range": 660,
+      "aimMode": "target",
+      "desc": "Rayo velocísimo que ralentiza",
+      "effects": [
+        {
+          "do": "projectile",
+          "speed": 950,
+          "radius": 11,
+          "dmg": 120,
+          "range": 660,
+          "color": "#ffe14d",
+          "slow": {
+            "pct": 0.3,
+            "dur": 1.5
+          }
+        }
+      ]
+    },
+    "thunder-wave": {
+      "id": "thunder-wave",
+      "name": "Onda Trueno",
+      "icon": "🌩️",
+      "cd": 11,
+      "cost": 25,
+      "pp": 10,
+      "types": [
+        "Electrico"
+      ],
+      "range": 520,
+      "aimMode": "target",
+      "desc": "Área que paraliza 60% por 2s",
+      "effects": [
+        {
+          "do": "zoneAt",
+          "r": 140,
+          "delay": 0.35,
+          "dmg": 20,
+          "color": "#ffe14d",
+          "slow": {
+            "pct": 0.6,
+            "dur": 2
+          }
+        }
+      ]
+    },
+    "spore-charge": {
+      "id": "spore-charge",
+      "name": "Carga de Esporas",
+      "icon": "🍂",
+      "cd": 8,
+      "cost": 25,
+      "types": [
+        "Veneno"
+      ],
+      "range": 300,
+      "aimMode": "target",
+      "desc": "Embestida que ralentiza 25% al atravesar",
+      "effects": [
+        {
+          "do": "dash",
+          "speed": 1100,
+          "time": 0.24,
+          "dmg": 20,
+          "slow": {
+            "pct": 0.25,
+            "dur": 2
+          },
+          "color": "#7ddf64"
+        }
+      ]
+    },
+    "dorsal-shield": {
+      "id": "dorsal-shield",
+      "name": "Escudo Dorsal",
+      "icon": "🛡️",
+      "cd": 14,
+      "cost": 30,
+      "types": [
+        "Veneno"
+      ],
+      "range": 9999,
+      "aimMode": "self",
+      "desc": "Escudo 280 + quien te pega se frena",
+      "effects": [
+        {
+          "do": "shield",
+          "amount": 280,
+          "dur": 4
+        },
+        {
+          "do": "thorns",
+          "pct": 0.2,
+          "dur": 4
+        }
+      ]
+    },
+    "thorn-ice": {
+      "id": "thorn-ice",
+      "name": "Hielo de Espinas",
+      "icon": "🧊",
+      "cd": 10,
+      "cost": 35,
+      "types": [
+        "Veneno"
+      ],
+      "range": 220,
+      "aimMode": "direction",
+      "desc": "Cono amplio: daño + slow 40%",
+      "effects": [
+        {
+          "do": "face"
+        },
+        {
+          "do": "cone",
+          "range": 220,
+          "halfAngle": 1.75,
+          "dmg": 90,
+          "slow": {
+            "pct": 0.4,
+            "dur": 2.5
+          },
+          "hitColor": "#aee3ff"
+        }
+      ]
+    },
+    "spore-masterpiece": {
+      "id": "spore-masterpiece",
+      "name": "Obra Maestra",
+      "icon": "🍄",
+      "cd": 30,
+      "cost": 60,
+      "pp": 5,
+      "types": [
+        "Veneno"
+      ],
+      "range": 320,
+      "aimMode": "self",
+      "desc": "ULTI: nova que envenena + frena 4s",
+      "effects": [
+        {
+          "do": "aura",
+          "at": "self",
+          "r": 260,
+          "delay": 0.4,
+          "dur": 4,
+          "color": "#7ddf64",
+          "slow": {
+            "pct": 0.3,
+            "dur": 2.5
+          },
+          "poison": {
+            "dps": 30,
+            "dur": 4
+          }
+        }
+      ]
+    },
+    "bombardment": {
+      "id": "bombardment",
+      "name": "Bombardeo",
+      "icon": "☄️",
+      "cd": 12,
+      "cost": 40,
+      "types": [
+        "Veneno"
+      ],
+      "range": 550,
+      "aimMode": "target",
+      "desc": "Zona telegrafiada: daño 150 en área",
+      "effects": [
+        {
+          "do": "zoneAt",
+          "r": 140,
+          "delay": 1,
+          "dmg": 150,
+          "color": "#d8b24a"
+        }
+      ]
+    },
+    "spore-mine": {
+      "id": "spore-mine",
+      "name": "Mina de Esporas",
+      "icon": "🟣",
+      "cd": 14,
+      "cost": 30,
+      "types": [
+        "Veneno"
+      ],
+      "range": 400,
+      "aimMode": "target",
+      "desc": "Trampa 20s: explota al pisar",
+      "effects": [
+        {
+          "do": "mine",
+          "r": 110,
+          "triggerR": 70,
+          "armDelay": 0.5,
+          "ttl": 20,
+          "dmg": 100,
+          "color": "#9d6fd1",
+          "slow": {
+            "pct": 0.3,
+            "dur": 2
+          }
+        }
+      ]
+    },
+    "mineral-sap": {
+      "id": "mineral-sap",
+      "name": "Savia Mineral",
+      "icon": "🧪",
+      "cd": 16,
+      "cost": 35,
+      "types": [
+        "Veneno"
+      ],
+      "range": 9999,
+      "aimMode": "self",
+      "desc": "Zona que cura 200 en 3s",
+      "effects": [
+        {
+          "do": "aura",
+          "at": "self",
+          "r": 200,
+          "delay": 0.2,
+          "dur": 3,
+          "color": "#4bd88a",
+          "healRate": 70
+        }
+      ]
+    },
+    "pearl-rain": {
+      "id": "pearl-rain",
+      "name": "Lluvia de Perlas",
+      "icon": "🌧️",
+      "cd": 32,
+      "cost": 65,
+      "pp": 5,
+      "types": [
+        "Veneno"
+      ],
+      "range": 400,
+      "aimMode": "target",
+      "desc": "ULTI: 5 zonas telegrafiadas, 110 c/u",
+      "effects": [
+        {
+          "do": "scatter",
+          "count": 5,
+          "r": 110,
+          "delay": 0.8,
+          "dmg": 110,
+          "spread": 200,
+          "color": "#cfc3e8"
+        }
+      ]
+    },
+    "charged-shot": {
+      "id": "charged-shot",
+      "name": "Tiro Cargado",
+      "icon": "🏹",
+      "cd": 9,
+      "cost": 30,
+      "types": [
+        "Veneno"
+      ],
+      "range": 700,
+      "aimMode": "target",
+      "desc": "Casteo 1s: daño 220 (se interrumpe)",
+      "effects": [
+        {
+          "do": "cast",
+          "dur": 1
+        },
+        {
+          "do": "projectile",
+          "speed": 1100,
+          "radius": 10,
+          "dmg": 220,
+          "range": 700,
+          "color": "#e8f0ff"
+        }
+      ]
+    },
+    "tailwind": {
+      "id": "tailwind",
+      "name": "Viento a Favor",
+      "icon": "🌬️",
+      "cd": 10,
+      "cost": 20,
+      "types": [
+        "Veneno"
+      ],
+      "range": 9999,
+      "aimMode": "direction",
+      "desc": "Escape + limpia tu slow",
+      "effects": [
+        {
+          "do": "dash",
+          "speed": 1200,
+          "time": 0.25,
+          "dmg": 0,
+          "color": "#c0b3e8"
+        },
+        {
+          "do": "cleanseSlow"
+        }
+      ]
+    },
+    "spore-cloud": {
+      "id": "spore-cloud",
+      "name": "Nube de Esporas",
+      "icon": "☁️",
+      "cd": 13,
+      "cost": 35,
+      "types": [
+        "Veneno"
+      ],
+      "range": 450,
+      "aimMode": "target",
+      "desc": "Nube 8s que frena 25% (visión: pendiente online)",
+      "effects": [
+        {
+          "do": "aura",
+          "at": "point",
+          "r": 180,
+          "delay": 0.4,
+          "dur": 8,
+          "color": "#9d6fd1",
+          "slow": {
+            "pct": 0.25,
+            "dur": 2
+          }
+        }
+      ]
+    },
+    "silent-death": {
+      "id": "silent-death",
+      "name": "Muerte Silenciosa",
+      "icon": "💀",
+      "cd": 30,
+      "cost": 60,
+      "pp": 5,
+      "types": [
+        "Veneno"
+      ],
+      "range": 900,
+      "aimMode": "target",
+      "desc": "ULTI: canaliza 1.2s, rayo de 380",
+      "effects": [
+        {
+          "do": "cast",
+          "dur": 1.2
+        },
+        {
+          "do": "beam",
+          "range": 900,
+          "halfWidth": 26,
+          "dmg": 380,
+          "color": "#f2ecff"
+        }
+      ]
+    },
+    "ice-spikes": {
+      "id": "ice-spikes",
+      "name": "Pinchos de Hielo",
+      "icon": "📌",
+      "cd": 9,
+      "cost": 30,
+      "types": [
+        "Veneno"
+      ],
+      "range": 260,
+      "aimMode": "direction",
+      "desc": "Cono: daño + slow 45%",
+      "effects": [
+        {
+          "do": "face"
+        },
+        {
+          "do": "cone",
+          "range": 260,
+          "halfAngle": 0.7,
+          "dmg": 70,
+          "slow": {
+            "pct": 0.45,
+            "dur": 2
+          },
+          "hitColor": "#aee3ff"
+        }
+      ]
+    },
+    "snow-fungus": {
+      "id": "snow-fungus",
+      "name": "Hongo de Nieve",
+      "icon": "⛄",
+      "cd": 15,
+      "cost": 35,
+      "types": [
+        "Veneno"
+      ],
+      "range": 480,
+      "aimMode": "target",
+      "desc": "Zona 6s que frena 35% al entrar",
+      "effects": [
+        {
+          "do": "aura",
+          "at": "point",
+          "r": 220,
+          "delay": 0.4,
+          "dur": 6,
+          "color": "#bcd8e8",
+          "slow": {
+            "pct": 0.35,
+            "dur": 2
+          }
+        }
+      ]
+    },
+    "root-snare": {
+      "id": "root-snare",
+      "name": "Arraigo",
+      "icon": "🪢",
+      "cd": 16,
+      "cost": 40,
+      "types": [
+        "Veneno"
+      ],
+      "range": 400,
+      "aimMode": "target",
+      "desc": "Enraíza 1.5s + envenena",
+      "effects": [
+        {
+          "do": "projectile",
+          "speed": 750,
+          "radius": 12,
+          "dmg": 60,
+          "range": 400,
+          "color": "#8fce7d",
+          "rootDur": 1.5,
+          "poison": {
+            "dps": 20,
+            "dur": 3
+          }
+        }
+      ]
+    },
+    "spore-winter": {
+      "id": "spore-winter",
+      "name": "Invierno de Esporas",
+      "icon": "🌨️",
+      "cd": 34,
+      "cost": 70,
+      "pp": 5,
+      "types": [
+        "Veneno"
+      ],
+      "range": 520,
+      "aimMode": "target",
+      "desc": "ULTI: zona 5s slow 40% + veneno",
+      "effects": [
+        {
+          "do": "aura",
+          "at": "point",
+          "r": 320,
+          "delay": 0.5,
+          "dur": 5,
+          "color": "#a9cdea",
+          "slow": {
+            "pct": 0.4,
+            "dur": 2.5
+          },
+          "poison": {
+            "dps": 25,
+            "dur": 4
+          }
+        }
+      ]
+    }
+  },
+  "types": {
+    "beats": {
+      "Tierra": [
+        "Siniestro",
+        "Electrico",
+        "Veneno"
+      ],
+      "Siniestro": [
+        "Psiquico"
+      ],
+      "Psiquico": [
+        "Planta"
+      ],
+      "Planta": [
+        "Tierra",
+        "Agua"
+      ],
+      "Fuego": [
+        "Planta",
+        "Veneno"
+      ],
+      "Agua": [
+        "Fuego"
+      ],
+      "Electrico": [
+        "Agua"
+      ],
+      "Veneno": [
+        "Planta"
+      ]
+    },
+    "multipliers": {
+      "strong": 1.4,
+      "weak": 0.72,
+      "neutral": 1
+    }
+  }
+}

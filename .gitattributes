@@ -1,0 +1,4 @@
+# Canonical client artifacts are vendored byte-for-byte. Git's autocrlf
+# normalization would rewrite the CRLF JSON the client delivered and break
+# the "exact bytes" contract (the heightmap sha256 gate is stricter still).
+data/canonical/** -text

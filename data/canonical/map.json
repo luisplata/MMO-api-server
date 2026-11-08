@@ -1,0 +1,177 @@
+{
+  "mapId": "carnaval-solar-v1",
+  "mapHash": "5fa2e4ca",
+  "world": {
+    "widthU": 130,
+    "heightU": 85,
+    "pxPerUnit": 20,
+    "origin": "min-corner",
+    "flat": true,
+    "height": 0
+  },
+  "bounds": {
+    "minX": 0,
+    "maxX": 130,
+    "minZ": 0,
+    "maxZ": 85,
+    "clampToRadius": true
+  },
+  "heightmap": {
+    "file": "carnaval-solar-v1.heightmap",
+    "sha256": "5fa2e4ca78d53407f39097666f66cf386038d69de2e777e471042741ac73d511",
+    "format": "MMOHMAP-v1",
+    "version": 1,
+    "width": 131,
+    "height": 86,
+    "cellSize": 1,
+    "originX": 0,
+    "originZ": 0,
+    "yScale": 1,
+    "coverageU": {
+      "x": 130,
+      "z": 85
+    }
+  },
+  "water": [
+    {
+      "z0": 38,
+      "z1": 47,
+      "speedScale": 0.7
+    }
+  ],
+  "pillars": [
+    {
+      "id": 0,
+      "x": 18.2,
+      "z": 13.6,
+      "rU": 2.45
+    },
+    {
+      "id": 1,
+      "x": 18.2,
+      "z": 32.867,
+      "rU": 2.45
+    },
+    {
+      "id": 2,
+      "x": 18.2,
+      "z": 52.133,
+      "rU": 2.95
+    },
+    {
+      "id": 3,
+      "x": 18.2,
+      "z": 71.4,
+      "rU": 2.81
+    },
+    {
+      "id": 4,
+      "x": 41.6,
+      "z": 13.6,
+      "rU": 2.64
+    },
+    {
+      "id": 5,
+      "x": 41.6,
+      "z": 32.867,
+      "rU": 2.6
+    },
+    {
+      "id": 6,
+      "x": 41.6,
+      "z": 52.133,
+      "rU": 2.72
+    },
+    {
+      "id": 7,
+      "x": 41.6,
+      "z": 71.4,
+      "rU": 2.74
+    },
+    {
+      "id": 8,
+      "x": 65,
+      "z": 13.6,
+      "rU": 2.74
+    },
+    {
+      "id": 9,
+      "x": 65,
+      "z": 71.4,
+      "rU": 2.45
+    },
+    {
+      "id": 10,
+      "x": 88.4,
+      "z": 13.6,
+      "rU": 2.66
+    },
+    {
+      "id": 11,
+      "x": 88.4,
+      "z": 32.867,
+      "rU": 2.62
+    },
+    {
+      "id": 12,
+      "x": 88.4,
+      "z": 52.133,
+      "rU": 2.46
+    },
+    {
+      "id": 13,
+      "x": 88.4,
+      "z": 71.4,
+      "rU": 2.94
+    },
+    {
+      "id": 14,
+      "x": 111.8,
+      "z": 13.6,
+      "rU": 2.75
+    },
+    {
+      "id": 15,
+      "x": 111.8,
+      "z": 32.867,
+      "rU": 3.04
+    },
+    {
+      "id": 16,
+      "x": 111.8,
+      "z": 52.133,
+      "rU": 2.8
+    },
+    {
+      "id": 17,
+      "x": 111.8,
+      "z": 71.4,
+      "rU": 2.37
+    }
+  ],
+  "spawns": [
+    {
+      "index": 0,
+      "x": 65,
+      "z": 68.5
+    },
+    {
+      "index": 1,
+      "x": 65,
+      "z": 16.5
+    }
+  ],
+  "visualOnly": [
+    {
+      "kind": "sand",
+      "heightPx": 64
+    }
+  ],
+  "meta": {
+    "sourceCommit": "3c986f7",
+    "generatedAt": "2026-11-08T01:55:05.061Z",
+    "pillarSeed": 1337,
+    "pillarRule": "grid 5x4, excluye <200px del centro, r=46..62px con mulberry32(1337)",
+    "radiusIsCollidable": true
+  }
+}
