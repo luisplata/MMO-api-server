@@ -2,3 +2,7 @@
 # normalization would rewrite the CRLF JSON the client delivered and break
 # the "exact bytes" contract (the heightmap sha256 gate is stricter still).
 data/canonical/** -text
+# Keep module files LF in the working tree on Windows too: the repository
+# contract test asserts the exact "module ...\n" prefix.
+go.mod text eol=lf
+go.sum text eol=lf

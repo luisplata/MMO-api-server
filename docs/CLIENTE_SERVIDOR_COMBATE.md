@@ -211,6 +211,7 @@ Cuando estos mensajes existan, sus ids y campos se agregan al `.proto` y a este 
 | **I2 — plantilla Server** | Server | Entrada: respuesta de Duarte. Salida: `.proto`/design del primer slice, contrato de mapa en `docs/`, campos nuevos con número asignado | `abierto` | El server responde pregunta por pregunta y publica el contrato antes de implementar. |
 | **I3 — plantilla ambos** | Duarte + Server | Entrada: build de staging. Salida: resultado del gate de M2 (alineación de mapa) | `abierto` | Un jugador no atraviesa pilares, el agua frena y ambos ven el mismo layout. |
 | **I1-server (respuesta)** — 2026-11-07 | Server | Entrada: `COMBATE_CLIENTE_A_SERVIDOR.md` I1. Salida: §7 (respuesta a 10+12, pedido de mapa/contenido/proto v3) | `propuesto` | Duarte responde §7.3–§7.5 en su I2 con `map.json`, `content.json`, hash y confirmación de v3. |
+| **I2-server (aceptación de artefactos)** — 2026-11-08 | Server | Entrada: I2 del cliente + `docs/artifacts/*`. Salida: §8 (M1 aceptado, respuestas a §8.6, plan de proto v3) | `confirmado` (mapa/contenido) · `propuesto` (wire v3) | Artefactos verificados byte a byte y cargados en boot. Falta publicar el `.proto` v3 y el runtime de M2/M3. |
 
 **Cómo editar sin romper el handoff**: agregá una fila al final, actualizá el estado de la anterior si cambió, y dejá el artefacto concreto (commit, hash, ruta). No borres filas viejas: son la evidencia de por qué el contrato dice lo que dice.
 
@@ -315,3 +316,79 @@ Se implementan y aceptan las **24 habilidades de kit**; las **40** se exportan y
 - [ ] Entregar `content.json` reproducible, commit/hash de origen y excepciones de closures.
 - [ ] Confirmar plan de proto v3, mapping `classId`, ciclo de partida/desconexión/timeout, canonicalización del hash y caps de entidades del snapshot.
 - [ ] Registrar las respuestas en `PokemonPvpWeb/docs/COMBATE_CLIENTE_A_SERVIDOR.md` y anexar acá el estado; **no** editar el protocolo hasta que el server publique el schema versionado.
+
+---
+
+## 8. I2-server — Aceptación de artefactos y respuesta a §8.6 (2026-11-08)
+
+> **Verificado contra**: HEAD `3c5976d` de `mmo-api-server` y la I2 del cliente (`COMBATE_CLIENTE_A_SERVIDOR.md` §8, HEAD `1e85d40`, artefactos con `sourceCommit 3c986f7`).
+> **Etiqueta de esta sección**: el mapa y el contenido están **`confirmado`** (verificados y consumidos); el wire de combate sigue **`propuesto`** hasta publicar el `.proto` v3.
+
+### 8.1 Artefactos aceptados y verificados
+
+Los cuatro archivos se copiaron **byte a byte** a `data/canonical/` y se validan en el boot del server. La verificación no es una lectura de tabla: se ejecutó el loader real.
+
+| Artefacto | Copia en el server | Verificación ejecutada | Resultado |
+|---|---|---|---|
+| `carnaval-solar-v1.heightmap` | `data/canonical/` | `go run ./cmd/heightmap-validate` + loader compartido | ✅ `131×86`, cell `1`, origin `(0,0)`, `y_scale 1`, bounds `x[0,130] z[0,85]`, manifest `sha256` + metadata redundante OK |
+| `carnaval-solar-v1.manifest` | `data/canonical/` | cross-check contra header | ✅ dims/cell/origin/y_scale coinciden |
+| `map.json` | `data/canonical/` | `content.LoadArena` + `VerifyHeightmapFile` | ✅ 18 pilares con radio fijo y dentro de bounds, 2 spawns distintos, agua `z 38–47 @ 0.7`, coverage `130×85` |
+| `content.json` | `data/canonical/` | `content.LoadContent` | ✅ 8 clases (`classId 1–8`), 24 referencias de kit, 40 habilidades, 21 primitivas, 12 con `pp` infinito, tipos completos |
+
+**Hashes comprobados contra el origen**: `content.json` `7d5c661a…` (declara `731e2a2d`), `map.json` `188c56dd…`, heightmap `5fa2e4ca…`. Los bytes en `HEAD` son idénticos a `D:\Web\PokemonPvpWeb\docs\artifacts\*` (comparado con `sha256sum`). `contentVersion` se recalculó con la regla canónica declarada y coincide: **`731e2a2d`**.
+
+**Nota de empaquetado**: los JSON del cliente venían con CRLF y `core.autocrlf=true` los convertía a LF al commitear, rompiendo el hash del contrato. Se agregó `data/canonical/** -text` en `.gitattributes` para preservar los bytes exactos. No es un cambio de formato del cliente: es protección del hash.
+
+**Hallazgo menor (no bloquea)**: en `content.json` las habilidades son un **objeto** indexado por id, no un array; el campo `basic.kind` usa `"proj"` (no `"projectile"`). El schema Go ya refleja ambas cosas. Si en el futuro se prefiere un array ordenado, es un cambio de artefacto y hash, no del wire.
+
+### 8.2 Qué quedó implementado en el server (M1)
+
+- `internal/content` (nuevo): parseo + validación estricta de `content.json` y `map.json`, y `VerifyHeightmapFile` como gate de alineación arena↔heightmap.
+- `cmd/server`: flags nuevos `-arena` (default `data/canonical/map.json`) y `-content` (default `data/canonical/content.json`); `-map` ahora defaultea a `data/canonical/carnaval-solar-v1.heightmap`. Con `-map ""` sigue el fixture embebido y se saltea la verificación canónica (modo tests/herramientas).
+- Boot fail-fast: cualquier artefacto inválido aborta **antes** de abrir el listener. Logs de boot:
+  ```
+  server: arena loaded: mapId=carnaval-solar-v1 mapHash=5fa2e4ca heightmap_sha256=5fa2e4ca
+  server: content loaded: contentVersion=731e2a2d classes=8 abilities=40
+  ```
+- Validación en tests: 12 corrupciones de contenido, 15 de arena y 5 de tamper de heightmap; el boot real de referencia pasa.
+
+**Lo que todavía NO hace**: `content.json`/`map.json` se validan pero **no** alimentan la simulación. No hay `classId`, HP, kits, primitivas, colisión ni `MatchStart`. Eso es M2/M3, no M1. El mapa canónico sí está activo como heightfield (plano), pero todavía no hay clamp de bounds ni pilares en la simulación.
+
+### 8.3 Respuesta a §8.6 (lo que pediste para arrancar)
+
+| # | Pedido | Respuesta del server | Estado |
+|---|---|---|---|
+| 1 | `.proto` v3 con ids y campos finales | Se publica en la **próxima iteración**, con el catálogo congelado que sigue en §8.4. Esta entrega no asigna ids para no bloquear I2 con un schema a medio diseñar. | `propuesto` (siguiente) |
+| 2 | `classId` en `EntityState`/`MatchStart`; `mapId`/`mapHash`/`contentVersion` en `ServerInfo`/`MatchStart` | Aceptado tal cual. `mapId`, `mapHash` y `contentVersion` ya se leen y validan en el server; falta publicarlos en el wire v3. | `confirmado` (diseño) |
+| 3 | Layout del snapshot de combate y listas | Se publica con el `.proto` v3. Base: `hp/maxHp/alive/classId/res/maxRes/pp[4]/cd[4]/facing` + `status` (stun, root, slowPct ya calculado, shield, invis, empowered, burn, poison, thorns, immuneSlow, invuln) + `projectiles[]/zones[]/traps[]` con `id` estable. | `propuesto` (concreto en v3) |
+| 4 | `CastRejected`: motivo enumerado y slot, sin cerrar sesión | Aceptado. Evento con `reason` enum (`cooldown`, `resource`, `pp`, `stun`, `casting`, `aim_range`, `dead`, `inactive`) + `slot`. **Nunca** cierra sesión. | `confirmado` |
+| 5 | Caps de tu §8.3 #5 | Aceptados: `entities 4`, `projectiles 64`, `zones 32`, `traps 32`, 8 estados, 4 slots. Si un cap se excede, el server descarta el más viejo por `id` de forma determinista; nunca trunca el frame. | `confirmado` |
+| 6 | Asignación de `spawnIndex` | **Por orden de entrada a la partida**: el primero en entrar recibe `spawnIndex 0`, el segundo `1`. Determinista, independiente de `character.id`, y sobrevive a una revancha reiniciando el orden al nuevo `MatchStart`. | `confirmado` |
+
+### 8.4 Catálogo v3 propuesto (para tu revisión antes de implementar del lado cliente)
+
+Mensajes nuevos aditivos (ids 23+, sin reciclar ids 1–22) en canal confiable:
+
+| Id | Mensaje | Dirección | Campos |
+|---|---|---|---|
+| 23 | `MatchStart` | S → C | `matchId`, `seed`, `mapId`, `mapHash`, `contentVersion`, `players[]` (`entityId`, `classId`, `spawnIndex`, `spawn{x,z}`), `pillars[]` (`id`, `x`, `z`, `r`) |
+| 24 | `MatchEnd` | S → C | `matchId`, `winnerId`, `loserId`, `reason` (`KO`/`FORFEIT`/`DISCONNECT`/`TIMEOUT`), `durationSec` |
+| 25 | `AbilityCast` | S → C | `entityId`, `slot`, `aim{x,z}`, `tick` |
+| 26 | `Hit` | S → C | `sourceId`, `targetId`, `amount`, `mult`, `absorbed`, `hpAfter`, `statusApplied[]` |
+| 27 | `CastRejected` | S → C | `entityId`, `slot`, `reason` (enum §8.3 #4) |
+| 28 | `CastInterrupted` | S → C | `entityId`, `slot`, `reason` (`STUN`/`KNOCKBACK`) |
+| 29 | `Death` | S → C | `entityId`, `killerId` |
+| 30 | `Surrender` | C → S | vacío |
+| 31 | `RematchRequest` | C → S | vacío |
+
+`MoveInput` **no se duplica**: en v3 se extiende con campos aditivos `moveMag` (float 0..1), `aim{x,z}`, `aimMode` (enum), `actions` (u32 bitmask: `1` básica, `2` esquiva, `4/8/16` slots) y `actionsSeq` (u32). En v3 el server **ignora `speed`** y deriva la velocidad de `classId × moveMag × multiplicadores`. Sin compatibilidad v2: `protoVer` pasa a `[3,3]`.
+
+> **Pendiente de tu confirmación**: nombres/ids/campos de §8.4. Si algo no encaja con tu cliente, corregilo en tu I3 **antes** de que implementemos el runtime; después del `.proto` publicado, cambiar ids es breaking.
+
+### 8.5 Próximo paso del server
+
+1. Publicar `.proto` v3 + docs de contrato (ids de §8.4) y regenerar bindings Go/ES.
+2. M2: bounds clamp, agua 0.7, pilares y spawns desde `map.json` (sin combate).
+3. M3: `MatchStart`/`MatchEnd`, `classId`, HP/alive y una rebanada vertical Terravox vs Psyflame.
+
+Hasta que publiquemos el `.proto` v3, el cliente puede avanzar con el consumo de `map.json` (bounds, agua, pilares fijos) sin esperar al combate.
