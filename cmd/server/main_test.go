@@ -49,6 +49,25 @@ func TestSplitOrigins(t *testing.T) {
 	}
 }
 
+// TestShortSHA pins the boot-log abbreviation of the heightmap sha256:
+// the first 8 hex characters, never a panic on short input.
+func TestShortSHA(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"5fa2e4ca78d53407f39097666f66cf386038d69de2e777e471042741ac73d511", "5fa2e4ca"},
+		{"abcdef0123456789", "abcdef01"},
+		{"abc", "abc"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		if got := shortSHA(tc.in); got != tc.want {
+			t.Errorf("shortSHA(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 // TestLoadMapDefaultSelectsEmbeddedFixture pins WTM-4 default: with no
 // -map flag the boot resolves the embedded hills fixture, whose spawn
 // point (100, 200) sits on the hill peak (Y = 25).

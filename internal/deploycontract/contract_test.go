@@ -112,6 +112,45 @@ func TestMainLoadsCharacterData(t *testing.T) {
 	)
 }
 
+// TestMainLoadsCanonicalArtifacts pins the M1 boot defaults: the deployed
+// binary loads the client-delivered canonical map, arena and content
+// artifacts and verifies arena<->heightmap alignment before opening any
+// listener. Removing one flag or loader from main.go fails CI here.
+func TestMainLoadsCanonicalArtifacts(t *testing.T) {
+	const name = "cmd/server/main.go"
+	body := readArtifact(t, name)
+	requireContains(t, name, body,
+		`flag.String("map", "data/canonical/carnaval-solar-v1.heightmap"`,
+		`flag.String("arena", "data/canonical/map.json"`,
+		`flag.String("content", "data/canonical/content.json"`,
+		"content.LoadContent(",
+		"content.LoadArena(",
+		"content.VerifyHeightmapFile(",
+	)
+}
+
+// TestCanonicalArtifactsAreCommitted pins the vendored artifact set the
+// boot flags default to. A missing file would make the fail-fast boot
+// abort inside the container.
+func TestCanonicalArtifactsAreCommitted(t *testing.T) {
+	for _, name := range []string{
+		"carnaval-solar-v1.heightmap",
+		"carnaval-solar-v1.manifest",
+		"map.json",
+		"content.json",
+	} {
+		path := filepath.Join("..", "..", "data", "canonical", name)
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Errorf("canonical artifact %s: %v", name, err)
+			continue
+		}
+		if info.IsDir() || info.Size() == 0 {
+			t.Errorf("canonical artifact %s is empty or a directory", name)
+		}
+	}
+}
+
 // TestDockerfileShipsCharacterData pins the runtime image to the committed
 // data files the boot flags default to; without them the fail-fast boot
 // would abort inside the container.
